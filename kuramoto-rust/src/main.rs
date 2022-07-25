@@ -8,25 +8,23 @@ use std::cmp;
 fn kuramoto_controller() {}
 
 fn calculate_delays(
-    g: f64,
-    timemetric: f64,
-    N: usize,
-    dt: f64,
-    dimension: i32,
-    tau: Array<f64, Ix2>,
-    Kcoupling: Array<f64, Ix2>,
+    timemetric: &f64,
+    N: &usize,
+    dt: &f64,
+    dimension: &i32,
+    tau: &mut Array<f64, Ix2>,
 ) {
     let Z = timemetric / dt;
     let mut x: f64 = 0.0;
     let mut y: f64 = 0.0;
     let mut d: f64 = 0.0;
 
-    if dimension == 1 {
-        for i in 0..N {
-            for j in 0..N {
+    if *dimension == 1 {
+        for i in 0..*N {
+            for j in 0..*N {
                 // tau[i, j]=trunc(Z/N*min(abs(i-j),N-abs(i-j)));
                 x = (i as f64 - j as f64).abs();
-                y = (N as f64 - x).abs();
+                y = (*N as f64 - x).abs();
                 if x < y {
                     d = x;
                 } else {
@@ -73,7 +71,7 @@ fn main() {
         let mut alpha: Array<f64, _> = Array::ones((N, N));
         let mut connectionmatrix: Array<f64, _> = Array::ones((N, N));
         Kcoupling.fill(g);
-        calculate_delays(g, timemetric, N, dt, dimension, tau, Kcoupling);
+        calculate_delays(&timemetric, &N, &dt, &dimension, &mut tau);
     }
 
     println!("Hello, world!");
