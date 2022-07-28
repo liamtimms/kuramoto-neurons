@@ -6,6 +6,14 @@ use ndarray::Array;
 use ndarray_rand::rand_distr;
 use ndarray_rand::RandomExt;
 
+fn max(a: &f64, b: &f64) -> f64 {
+    if *a >= *b {
+        *a
+    } else {
+        *b
+    }
+}
+
 fn calculate_delays(timemetric: &f64, N: &usize, dt: &f64, dimension: &i32) -> Array<f64, Ix2> {
     let Z: f64 = timemetric / dt;
     let mut x: f64 = 0.0;
@@ -18,9 +26,9 @@ fn calculate_delays(timemetric: &f64, N: &usize, dt: &f64, dimension: &i32) -> A
             for j in 0..*N {
                 if i != j {
                     x = (i as f64 - j as f64).abs();
-                    y = (*N as f64 - x).abs();
+                    y = *N as f64 - x;
                     // pick minimum value
-                    if x < y {
+                    if x <= y {
                         d = x;
                     } else if x > y {
                         d = y;
@@ -33,11 +41,12 @@ fn calculate_delays(timemetric: &f64, N: &usize, dt: &f64, dimension: &i32) -> A
                 // tau[i, j]=trunc(Z/N*min(abs(i-j),N-abs(i-j)));
                 // tau[[i, j]] = Z / N as f64 * cmp::min(x, N as f64 - x);
                 // print!(
-                //     "for i={}, j={}, x={}, y={}, tau = {}\n",
+                //     "for i={}, j={}, x={}, y={}, d={}, tau = {}\n",
                 //     i,
                 //     j,
                 //     x,
                 //     y,
+                //     d,
                 //     tau[[i, j]]
                 // );
             }
@@ -49,8 +58,14 @@ fn calculate_delays(timemetric: &f64, N: &usize, dt: &f64, dimension: &i32) -> A
     }
 }
 
-fn OPs(phi: Array<f64, Ix2>, N: &usize, tmax: &usize) {
+fn OPs(
+    phi: Array<f64, Ix2>,
+    N: &usize,
+    tmax: &usize,
+) -> (Array<f64, Ix2>, Array<f64, Ix2>, Array<f64, Ix2>) {
     // calculate order parameters
+    // This is reproduced from the original code
+    // and clearly not optimal.
     let mut sinsum = 0.0;
     let mut cossum = 0.0;
 
@@ -71,7 +86,11 @@ fn OPs(phi: Array<f64, Ix2>, N: &usize, tmax: &usize) {
 
     let mut phicurrent: Array<f64, Ix1> = Array::zeros(*N);
 
-    for m in 0..=5 {
+    let mut OrderParameter: Array<f64, Ix2> = Array::zeros((5, *tmax));
+    let mut OrderParameter2Cluster: Array<f64, Ix2> = Array::zeros((5, *tmax));
+    let mut OrderParameter2ClusterConnected: Array<f64, Ix2> = Array::zeros((5, *tmax));
+
+    for m in 0..5 {
         for t in 0..*tmax {
             for i in 0..*N {
                 phicurrent[i] =
@@ -83,12 +102,64 @@ fn OPs(phi: Array<f64, Ix2>, N: &usize, tmax: &usize) {
                 sinsum3 += (3.0 * phicurrent[i]).sin();
                 cossum3 += (3.0 * phicurrent[i]).cos();
             }
+
             OPminus = (sinsum.powi(2) + cossum.powi(2)).sqrt() / *N as f64;
             OPminus2 = ((((sinsum2.powi(2) + cossum2.powi(2)).sqrt()).abs() / *N as f64 - OPminus)
                 .powi(2))
             .sqrt();
+            OPminus3 = ((((sinsum3.powi(2) + cossum3.powi(2)).sqrt()).abs() / *N as f64 - OPminus)
+                .powi(2))
+            .sqrt();
+
+            sinsum = 0.0;
+            cossum = 0.0;
+            sinsum2 = 0.0;
+            cossum2 = 0.0;
+            sinsum3 = 0.0;
+            cossum3 = 0.0;
+
+            for i in 0..*N {
+                phicurrent[i] =
+                    phi[[i, t]] + (2.0 * std::f64::consts::PI * m as f64) * i as f64 / *N as f64;
+                sinsum += (phicurrent[i]).sin();
+                cossum += (phicurrent[i]).sin();
+                sinsum2 += (2.0 * phicurrent[i]).sin();
+                cossum2 += (2.0 * phicurrent[i]).cos();
+                sinsum3 += (3.0 * phicurrent[i]).sin();
+                cossum3 += (3.0 * phicurrent[i]).cos();
+            }
+            OPplus = (sinsum.powi(2) + cossum.powi(2)).sqrt() / *N as f64;
+            OPplus2 = ((((sinsum2.powi(2) + cossum2.powi(2)).sqrt()).abs() / *N as f64 - OPplus)
+                .powi(2))
+            .sqrt();
+            OPplus3 = ((((sinsum3.powi(2) + cossum3.powi(2)).sqrt()).abs() / *N as f64 - OPplus)
+                .powi(2))
+            .sqrt();
+
+            sinsum = 0.0;
+            cossum = 0.0;
+            sinsum2 = 0.0;
+            cossum2 = 0.0;
+            sinsum3 = 0.0;
+            cossum3 = 0.0;
+
+            OrderParameter[[m, t]] = max(&OPplus, &OPminus);
+            OrderParameter2Cluster[[m, t]] = max(&OPplus2, &OPminus2);
+            OrderParameter2ClusterConnected[[m, t]] = max(&OPplus3, &OPminus3);
+
+            OPminus = 0.0;
+            OPplus = 0.0;
+            OPminus2 = 0.0;
+            OPplus2 = 0.0;
+            OPminus3 = 0.0;
+            OPplus3 = 0.0;
         }
     }
+    (
+        OrderParameter,
+        OrderParameter2Cluster,
+        OrderParameter2ClusterConnected,
+    )
 }
 
 fn initialize_phi(N: &usize, clustersize: &usize, tmax: &usize) -> Array<f64, Ix2> {
@@ -110,10 +181,9 @@ fn driver(
     omega: &Array<f64, Ix1>,
 ) -> Array<f64, Ix2> {
     // replaces "function driver(dt, drivingfrequency, clustersize, dimension)" in igor
-    let mut timewithstep: usize = 0;
     for t in 0..*tinitial {
         for i in 0..*N {
-            timewithstep = t + 1;
+            let timewithstep = t + 1;
             if i < *clustersize {
                 phi[[i, timewithstep]] = phi[[i, t]] + drivingfrequency * dt;
             } else if i >= *clustersize {
@@ -172,6 +242,21 @@ fn model(
     return (phi, Kcoupling);
 }
 
+fn OPcompare(
+    tmax: &usize,
+    OrderParameter: &Array<f64, Ix2>,
+    OrderParameter2Cluster: &Array<f64, Ix2>,
+    OrderParameter2ClusterConnected: &Array<f64, Ix2>,
+) {
+    let mut currentMax = 0.0;
+
+    for m in 0..5 {
+        if OrderParameter[[m, *tmax - 1]] > currentMax {
+            currentMax = OrderParameter[[m, *tmax - 1]];
+        }
+    }
+}
+
 fn main() {
     // all parameters
     let dimension = 1;
@@ -193,9 +278,6 @@ fn main() {
 
         let mut Kcoupling: Array<f64, Ix2> = Array::zeros((N, N));
         let mut FinalFrequencies: Array<f64, _> = Array::zeros(N);
-        let mut OrderParameter: Array<f64, _> = Array::zeros((4, tmax));
-        let mut OrderParameter2Cluster: Array<f64, _> = Array::zeros((4, tmax));
-        let mut OrderParameter2ClusterConnected: Array<f64, _> = Array::zeros((4, tmax));
         let mut tt: Array<f64, _> = Array::zeros(N * tmax);
         let mut freqs: Array<f64, _> = Array::zeros(N * tmax);
 
@@ -235,5 +317,18 @@ fn main() {
         );
 
         // calculating the order parameter
+        let (OrderParameter, OrderParameter2Cluster, OrderParameter2ClusterConnected) =
+            OPs(phi, &N, &tmax);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn it_finds_max() {
+        // my first test!
+        assert_eq!(4.0, max(&3.5, &4.0));
     }
 }
