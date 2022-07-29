@@ -2,8 +2,12 @@
 name = "kuramoto-rust"
 version = "0.1.0"
 edition = "2021"
+authors = ["Liam Timms"]
+description = "Kuramoto model with learning and delay in Rust"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
 ndarray = "0.15.4"
+ndarray-rand = "0.14.0"
+ndarray-linalg = "0.14.0"

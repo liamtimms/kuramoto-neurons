@@ -14,14 +14,14 @@ fn max(a: &f64, b: &f64) -> f64 {
     }
 }
 
-fn calculate_delays(timemetric: &f64, N: &usize, dt: &f64, dimension: &i32) -> Array<f64, Ix2> {
+fn calculate_delays(timemetric: &f64, N: &usize, dt: &f64, dimension: &i32) -> Array<usize, Ix2> {
     let Z: f64 = timemetric / dt;
     let mut x: f64 = 0.0;
     let mut y: f64 = 0.0;
     let mut d: f64 = 0.0;
 
     if *dimension == 1 {
-        let mut tau: Array<f64, Ix2> = Array::zeros((*N, *N));
+        let mut tau: Array<usize, Ix2> = Array::zeros((*N, *N));
         for i in 0..*N {
             for j in 0..*N {
                 if i != j {
@@ -32,11 +32,13 @@ fn calculate_delays(timemetric: &f64, N: &usize, dt: &f64, dimension: &i32) -> A
                         d = x;
                     } else if x > y {
                         d = y;
+                    } else {
+                        panic!("Error in calculating delays");
                     }
                     // input calculated delay into tau
-                    tau[[i, j]] = Z / (*N as f64) * d;
+                    tau[[i, j]] = (Z / (*N as f64) * d).round() as usize;
                 } else {
-                    tau[(i, j)] = 0.0;
+                    tau[(i, j)] = 0 as usize;
                 }
                 // tau[i, j]=trunc(Z/N*min(abs(i-j),N-abs(i-j)));
                 // tau[[i, j]] = Z / N as f64 * cmp::min(x, N as f64 - x);
@@ -53,7 +55,7 @@ fn calculate_delays(timemetric: &f64, N: &usize, dt: &f64, dimension: &i32) -> A
         }
         tau
     } else {
-        let mut tau: Array<f64, Ix2> = Array::zeros((*N, *N));
+        let mut tau: Array<usize, Ix2> = Array::zeros((*N, *N));
         tau
     }
 }
@@ -162,6 +164,16 @@ fn OPs(
     )
 }
 
+fn FinalFreqs(phi: Array<f64, Ix2>, N: &usize, dt: &f64, tmax: &usize) {
+    let deltat = 20;
+    let mut finalfrequencies: Array<f64, Ix1> = Array::zeros(*N);
+    for i in 0..*N {
+        let comparisontime = *tmax - (deltat + 1);
+        finalfrequencies[i] = (phi[[i, *tmax]] - phi[[i, comparisontime]]) / (deltat as f64 * dt);
+        finalfrequencies[i] = finalfrequencies[i] * dt;
+    }
+}
+
 fn initialize_phi(N: &usize, clustersize: &usize, tmax: &usize) -> Array<f64, Ix2> {
     // replaces "function initialconditions1(N,clustersize, dimension)" in igor
     let mut phi: Array<f64, Ix2> = Array::zeros((*N, *tmax));
@@ -196,15 +208,19 @@ fn driver(
 }
 
 fn model(
+    // parameters for oscillators
     mut phi: Array<f64, Ix2>,
     mut Kcoupling: Array<f64, Ix2>,
+    omega: &Array<f64, Ix1>,
+
     dt: &f64,
     tinitial: &usize,
     tmax: &usize,
     N: &usize,
     epsilon: &f64,
-    tau: &Array<f64, Ix2>,
-    omega: &Array<f64, Ix1>,
+
+    // parameters for connections
+    tau: &Array<usize, Ix2>,
     connectionmatrix: &Array<f64, Ix2>,
     alpha: &Array<f64, Ix2>,
 ) -> (Array<f64, Ix2>, Array<f64, Ix2>) {
@@ -285,7 +301,7 @@ fn main() {
         let mut connectionmatrix: Array<f64, _> = Array::ones((N, N));
         Kcoupling.fill(g);
 
-        let tau: Array<f64, Ix2> = calculate_delays(&timemetric, &N, &dt, &dimension);
+        let tau: Array<usize, Ix2> = calculate_delays(&timemetric, &N, &dt, &dimension);
         let omega: Array<f64, Ix1> = Array::random(N, rand_distr::StandardNormal);
         // initial conditions
         let mut phi: Array<f64, Ix2> = initialize_phi(&N, &clustersize, &tmax);
@@ -305,13 +321,13 @@ fn main() {
         (phi, Kcoupling) = model(
             phi,
             Kcoupling,
+            &omega,
             &dt,
             &tinitial,
             &tmax,
             &N,
             &epsilon,
             &tau,
-            &omega,
             &connectionmatrix,
             &alpha,
         );
