@@ -155,11 +155,12 @@ fn calc_order_params(
 }
 
 fn final_freqs(phi: &Array<f64, Ix2>, n: &usize, dt: &f64, tmax: &usize) -> Array<f64, Ix1> {
-    let deltat = 20;
+    let delta_t = 20;
     let mut finalfrequencies: Array<f64, Ix1> = Array::zeros(*n);
     for i in 0..*n {
-        let comparisontime = *tmax - (deltat + 1);
-        finalfrequencies[i] = (phi[[i, *tmax]] - phi[[i, comparisontime]]) / (deltat as f64 * dt);
+        let comparisontime = *tmax - (delta_t + 1);
+        finalfrequencies[i] =
+            (phi[[i, *tmax - 1]] - phi[[i, comparisontime]]) / (delta_t as f64 * dt);
         finalfrequencies[i] = finalfrequencies[i] * dt;
     }
     finalfrequencies
