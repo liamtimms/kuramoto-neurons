@@ -13,41 +13,33 @@ fn max(a: &f64, b: &f64) -> f64 {
     }
 }
 
+fn find_delay(i: &usize, j: &usize, n: &usize, z: &f64) -> usize {
+    let x = (*i as f64 - *j as f64).abs();
+    let y = *n as f64 - x; // wrap around otherside of the circle
+    let d = {
+        if x <= y {
+            x
+        } else if x > y {
+            y
+        } else {
+            0.0
+        }
+    };
+    ((z / *n as f64) * d).round() as usize
+}
+
 fn calculate_delays(timemetric: &f64, n: &usize, dt: &f64, dimension: &i32) -> Array<usize, Ix2> {
     let z: f64 = timemetric / dt;
-    let mut d: f64 = 0.0;
 
     if *dimension == 1 {
         let mut tau: Array<usize, Ix2> = Array::zeros((*n, *n));
         for i in 0..*n {
             for j in 0..*n {
                 if i != j {
-                    let x = (i as f64 - j as f64).abs();
-                    let y = *n as f64 - x;
-                    // pick minimum value
-                    if x <= y {
-                        d = x;
-                    } else if x > y {
-                        d = y;
-                    } else {
-                        panic!("Error in calculating delays");
-                    }
-                    // input calculated delay into tau
-                    tau[[i, j]] = (z / (*n as f64) * d).round() as usize;
+                    tau[[i, j]] = find_delay(&i, &j, &*n, &z);
                 } else {
                     tau[(i, j)] = 0 as usize;
                 }
-                // tau[i, j]=trunc(Z/N*min(abs(i-j),N-abs(i-j)));
-                // tau[[i, j]] = Z / N as f64 * cmp::min(x, N as f64 - x);
-                // print!(
-                //     "for i={}, j={}, x={}, y={}, d={}, tau = {}\n",
-                //     i,
-                //     j,
-                //     x,
-                //     y,
-                //     d,
-                //     tau[[i, j]]
-                // );
             }
         }
         tau
@@ -82,13 +74,6 @@ fn calc_order_params(
 
     for m in 0..5 {
         for t in 0..*tmax {
-            let mut op_minus = 0.0;
-            let mut op_plus = 0.0;
-            let mut op_minus2 = 0.0;
-            let mut op_plus2 = 0.0;
-            let mut op_minus3 = 0.0;
-            let mut op_plus3 = 0.0;
-
             for i in 0..*n {
                 phicurrent[i] =
                     phi[[i, t]] - (2.0 * std::f64::consts::PI * m as f64) * i as f64 / *n as f64;
@@ -100,12 +85,12 @@ fn calc_order_params(
                 cossum3 += (3.0 * phicurrent[i]).cos();
             }
 
-            op_minus = (sinsum.powi(2) + cossum.powi(2)).sqrt() / *n as f64;
-            op_minus2 = ((((sinsum2.powi(2) + cossum2.powi(2)).sqrt()).abs() / *n as f64
+            let op_minus = (sinsum.powi(2) + cossum.powi(2)).sqrt() / *n as f64;
+            let op_minus2 = ((((sinsum2.powi(2) + cossum2.powi(2)).sqrt()).abs() / *n as f64
                 - op_minus)
                 .powi(2))
             .sqrt();
-            op_minus3 = ((((sinsum3.powi(2) + cossum3.powi(2)).sqrt()).abs() / *n as f64
+            let op_minus3 = ((((sinsum3.powi(2) + cossum3.powi(2)).sqrt()).abs() / *n as f64
                 - op_minus)
                 .powi(2))
             .sqrt();
@@ -127,11 +112,14 @@ fn calc_order_params(
                 sinsum3 += (3.0 * phicurrent[i]).sin();
                 cossum3 += (3.0 * phicurrent[i]).cos();
             }
-            op_plus = (sinsum.powi(2) + cossum.powi(2)).sqrt() / *n as f64;
-            op_plus2 = ((((sinsum2.powi(2) + cossum2.powi(2)).sqrt()).abs() / *n as f64 - op_plus)
+
+            let op_plus = (sinsum.powi(2) + cossum.powi(2)).sqrt() / *n as f64;
+            let op_plus2 = ((((sinsum2.powi(2) + cossum2.powi(2)).sqrt()).abs() / *n as f64
+                - op_plus)
                 .powi(2))
             .sqrt();
-            op_plus3 = ((((sinsum3.powi(2) + cossum3.powi(2)).sqrt()).abs() / *n as f64 - op_plus)
+            let op_plus3 = ((((sinsum3.powi(2) + cossum3.powi(2)).sqrt()).abs() / *n as f64
+                - op_plus)
                 .powi(2))
             .sqrt();
 
@@ -197,6 +185,29 @@ fn driver(
         }
     }
     phi
+}
+
+fn update_oscillator(
+    t: &usize,
+    i: &usize,
+    phi: &Array<f64, Ix2>,
+    tau: &Array<usize, Ix2>,
+    omega: &Array<f64, Ix1>,
+    kcoupling: &Array<f64, Ix2>,
+    connectionmatrix: &Array<f64, Ix2>,
+    dt: &f64,
+) -> f64 {
+    let mut summation = 0.0;
+    let phi_current = phi[[*i, *t]];
+    let n = phi.shape()[0];
+    for j in 0..n {
+        let timewithdelay = t - tau[[*i, j]] as usize;
+        let factor = phi[[j, timewithdelay]] - phi_current;
+        summation += kcoupling[[*i, j]] * factor.sin() * connectionmatrix[[*i, j]];
+    }
+    let timewithstep = t + 1;
+    let phi_new = phi_current + (omega[*i] + (summation / n as f64)) * dt; /* error here */
+    phi_new
 }
 
 fn model(
@@ -275,8 +286,9 @@ fn main() {
     let mode = 0; //Sets initial conditions: 0->random phases, 1->same phase cluster, 2->plane wave cluster, 3->circles cluster
     let clustersize = n; //cluster=N for whole array to be driven
     let drivingfrequency: f64 = 1.0; //frequency that the oscillaotrs in the cluster will be forced to move at
-    let spreadinomega = 0; //the standard deviation in the natural frequencies
-    let tmax = 2000; //the number of total time steps we are simulating (counts the initial conditions)
+    let spreadinomega: f64 = 0.0; //the standard deviation in the natural frequencies
+                                  // let tmax = 2000; //the number of total time steps we are simulating (counts the initial conditions)
+    let tmax = 20000; //the number of total time steps we are simulating (counts the initial conditions)
 
     if dimension == 1 {
         let mut kcoupling: Array<f64, Ix2> = Array::zeros((n, n));
@@ -294,10 +306,12 @@ fn main() {
         let tau: Array<usize, Ix2> = calculate_delays(&timemetric, &n, &dt, &dimension);
 
         // TODO: check implmentation of this normal distribution
-        let omega: Array<f64, Ix1> = Array::random(n, rand_distr::StandardNormal);
+        let omega: Array<f64, Ix1> =
+            Array::random(n, rand_distr::Normal::new(1.0, spreadinomega).unwrap());
 
         // initial conditions
         let mut phi: Array<f64, Ix2> = initialize_phi(&n, &clustersize, &tmax);
+        println!("phi shape: {:?}", phi.shape()[0]);
 
         // driving the cluster for the initial time
         phi = driver(
