@@ -1,9 +1,21 @@
 extern crate ndarray;
 
+use ndarray::parallel::prelude::*;
 use ndarray::prelude::*;
 use ndarray::Array;
+use ndarray::Zip;
 use ndarray_rand::rand_distr;
 use ndarray_rand::RandomExt;
+use rayon::prelude::*;
+
+struct KuramotoCircle {
+    // a 1D circle of oscillators (2nd dimension is the time)
+    phi: Array<f64, Ix2>,       // the phase of each oscillator in rads
+    omega: Array<f64, Ix2>,     // the angular velocity of each oscillator
+    kcoupling: Array<f64, Ix2>, // the coupling constant of each oscillator
+    alpha: f64,                 // a constant that controls the strength of the coupling
+    epsilon: f64,               // constant to adjust dynamic level of coupling
+}
 
 fn max(a: &f64, b: &f64) -> f64 {
     if *a >= *b {
@@ -31,22 +43,17 @@ fn find_delay(i: &usize, j: &usize, n: &usize, z: &f64) -> usize {
 fn calculate_delays(timemetric: &f64, n: &usize, dt: &f64, dimension: &i32) -> Array<usize, Ix2> {
     let z: f64 = timemetric / dt;
 
-    if *dimension == 1 {
-        let mut tau: Array<usize, Ix2> = Array::zeros((*n, *n));
-        for i in 0..*n {
-            for j in 0..*n {
-                if i != j {
-                    tau[[i, j]] = find_delay(&i, &j, &*n, &z);
-                } else {
-                    tau[(i, j)] = 0 as usize;
-                }
+    let mut tau: Array<usize, Ix2> = Array::zeros((*n, *n));
+    for i in 0..*n {
+        for j in 0..*n {
+            if i != j {
+                tau[[i, j]] = find_delay(&i, &j, &*n, &z);
+            } else {
+                tau[(i, j)] = 0 as usize;
             }
         }
-        tau
-    } else {
-        let tau: Array<usize, Ix2> = Array::zeros((*n, *n));
-        tau
     }
+    tau
 }
 
 fn calc_order_params(
@@ -205,7 +212,6 @@ fn update_oscillator(
         let factor = phi[[j, timewithdelay]] - phi_current;
         summation += kcoupling[[*i, j]] * factor.sin() * connectionmatrix[[*i, j]];
     }
-    let timewithstep = t + 1;
     let phi_new = phi_current + (omega[*i] + (summation / n as f64)) * dt; /* error here */
     phi_new
 }
@@ -233,17 +239,42 @@ fn model(
     //BEGINING OF TIME (1D)
     for t in *tinitial..(*tmax - 1) {
         //Evolution of Phase
+        // for i in 0..*n {
+        //     phicurrent[i] = phi[[i, t]];
+        //     for j in 0..*n {
+        //         let timewithdelay = t - tau[[i, j]] as usize;
+        //         let factor = phi[[j, timewithdelay]] - phicurrent[i];
+        //         summation = summation + kcoupling[[i, j]] * factor.sin() * connectionmatrix[[i, j]];
+        //     }
+        //     let timewithstep = t + 1;
+        //     phi[[i, timewithstep]] = phicurrent[i] + (omega[i] + (summation / *n as f64)) * dt; /* error here */
+        //     summation = 0.0;
+        // }
         for i in 0..*n {
-            phicurrent[i] = phi[[i, t]];
-            for j in 0..*n {
-                let timewithdelay = t - tau[[i, j]] as usize;
-                let factor = phi[[j, timewithdelay]] - phicurrent[i];
-                summation = summation + kcoupling[[i, j]] * factor.sin() * connectionmatrix[[i, j]];
-            }
-            let timewithstep = t + 1;
-            phi[[i, timewithstep]] = phicurrent[i] + (omega[i] + (summation / *n as f64)) * dt; /* error here */
-            summation = 0.0;
+            phi[[i, t + 1]] = update_oscillator(
+                &t,
+                &i,
+                &phi,
+                &tau,
+                &omega,
+                &kcoupling,
+                &connectionmatrix,
+                &dt,
+            );
         }
+
+        // attempt at iteration over all oscillators
+        let phicurrent = phi.slice(s![.., t]);
+
+        for (i, value) in phicurrent.indexed_iter() {
+            println!("value {} for index {} at time {}", value, i, t);
+        }
+
+        // attempt at parallel iteration over all oscillators
+
+        Zip::indexed(phicurrent).par_for_each(|i, value| {
+            println!("value {} for index {} at time {}", value, i, t);
+        });
 
         //Evolution of Coupling
         for i in 0..*n {
@@ -281,14 +312,14 @@ fn main() {
     let epsilon = 0.1;
     let dt = 0.01;
     let timemetric: f64 = 2.0; //Zannette's "T" used only for initial conditions if timemetric2 != it.
-    let tinitial = 1000;
+    let tinitial = 100;
 
     let mode = 0; //Sets initial conditions: 0->random phases, 1->same phase cluster, 2->plane wave cluster, 3->circles cluster
-    let clustersize = n; //cluster=N for whole array to be driven
+    let clustersize = 0; //cluster=N for whole array to be driven
     let drivingfrequency: f64 = 1.0; //frequency that the oscillaotrs in the cluster will be forced to move at
-    let spreadinomega: f64 = 0.0; //the standard deviation in the natural frequencies
-                                  // let tmax = 2000; //the number of total time steps we are simulating (counts the initial conditions)
-    let tmax = 20000; //the number of total time steps we are simulating (counts the initial conditions)
+    let spreadinomega: f64 = 0.25; //the standard deviation in the natural frequencies
+                                   // let tmax = 2000; //the number of total time steps we are simulating (counts the initial conditions)
+    let tmax = 2000; //the number of total time steps we are simulating (counts the initial conditions)
 
     if dimension == 1 {
         let mut kcoupling: Array<f64, Ix2> = Array::zeros((n, n));
