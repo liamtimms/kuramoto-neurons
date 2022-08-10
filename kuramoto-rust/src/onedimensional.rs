@@ -7,6 +7,23 @@ use ndarray_rand::RandomExt;
 
 use crate::utils;
 
+fn find_delay(i: &usize, j: &usize, n: &usize, z: &f64) -> usize {
+    // find the delay between oscillator i and it's neighbor j
+    let x = (*i as f64 - *j as f64).abs();
+    let y = *n as f64 - x; // wrap around otherside of the circle
+    let d = {
+        // find minimum distance
+        if x <= y {
+            x
+        } else if x > y {
+            y
+        } else {
+            0.0
+        }
+    };
+    ((z / *n as f64) * d).round() as usize
+}
+
 fn calculate_delays(timemetric: &f64, n: &usize, dt: &f64) -> Array<usize, Ix2> {
     // calculate the delays for each oscillator
     let z: f64 = timemetric / dt;
@@ -14,7 +31,7 @@ fn calculate_delays(timemetric: &f64, n: &usize, dt: &f64) -> Array<usize, Ix2> 
     for i in 0..*n {
         for j in 0..*n {
             if i != j {
-                tau[[i, j]] = utils::find_delay(&i, &j, &*n, &z);
+                tau[[i, j]] = find_delay(&i, &j, &*n, &z);
             } else {
                 tau[(i, j)] = 0 as usize;
             }

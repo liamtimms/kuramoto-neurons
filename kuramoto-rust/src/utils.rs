@@ -20,19 +20,12 @@ pub fn max(a: &f64, b: &f64) -> f64 {
     }
 }
 
-pub fn find_delay(i: &usize, j: &usize, n: &usize, z: &f64) -> usize {
-    // find the delay between oscillator i and it's neighbor j
-    let x = (*i as f64 - *j as f64).abs();
-    let y = *n as f64 - x; // wrap around otherside of the circle
-    let d = {
-        // find minimum distance
-        if x <= y {
-            x
-        } else if x > y {
-            y
-        } else {
-            0.0
-        }
-    };
-    ((z / *n as f64) * d).round() as usize
+pub fn min(x: f64, x_prime: f64) -> f64 {
+    if x <= x_prime {
+        x
+    } else if x > x_prime {
+        x_prime
+    } else {
+        0.0
+    }
 }
