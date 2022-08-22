@@ -2,10 +2,9 @@ extern crate ndarray;
 
 use ndarray_npy::write_npy;
 use std::fmt::Write;
+use std::path::PathBuf;
 
 use clap::Parser;
-// use ndarray::Zip;
-// use rayon::prelude::*;
 
 mod onedimensional;
 mod twodimensional;
@@ -15,8 +14,12 @@ mod utils;
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
 struct Args {
+    /// The directory to save the results to
+    #[clap(short, long, parse(from_os_str))]
+    output_dir: std::path::PathBuf,
+
     /// Number of dimensions of the system
-    #[clap(short, long, value_parser, default_value_t = 2)]
+    #[clap(short, long, value_parser, default_value_t = 1)]
     dimension: i32,
 
     /// Number of oscillators
@@ -24,7 +27,7 @@ struct Args {
     number: usize,
 
     /// Number of steps to run the simulation
-    #[clap(short, long, value_parser, default_value_t = 2000)]
+    #[clap(short, long, value_parser, default_value_t = 500)]
     tmax: usize,
 }
 
@@ -35,6 +38,7 @@ fn main() {
     let dimension = cli.dimension;
     let n: usize = cli.number; //Either the number of oscillators (1D) or the height/width of the square array
     let tmax: usize = cli.tmax; //the number of total time steps we are simulating (counts the initial conditions)
+    let output_dir: PathBuf = cli.output_dir;
 
     // let dimension = 2;
     // let n: usize = 20; //Either the number of oscillators (1D) or the height/width of the square array
@@ -56,7 +60,13 @@ fn main() {
     let clustersize = 0; //cluster=N for whole array to be driven
     let drivingfrequency: f64 = 1.0; //frequency that the oscillaotrs in the cluster will be forced to move at
 
+    // setting up the output file name for later
+    let mut phi_save_name = "phi_".to_string();
+    write!(phi_save_name, "N{}-tmax{}-dim{}.npy", n, tmax, dimension).unwrap();
+    let phi_save_name = output_dir.join(phi_save_name);
+
     if dimension == 1 {
+        // calling the 1D simulation
         let phi = onedimensional::run(
             n,
             tmax,
@@ -70,10 +80,13 @@ fn main() {
             drivingfrequency,
         );
 
-        let mut phi_save_name = "phi_".to_string();
-        write!(phi_save_name, "N{}-tmax{}-dim{}.npy", n, tmax, dimension).unwrap();
-        write_npy(&phi_save_name, &phi);
+        // save data with error handling
+        match write_npy(&phi_save_name, &phi) {
+            Ok(_) => println!("Saved to {}", phi_save_name.display()),
+            Err(e) => println!("Error saving to {}: {}", phi_save_name.display(), e),
+        }
     } else if dimension == 2 {
+        // calling the 2D simulation
         let phi = twodimensional::run(
             n,
             tmax,
@@ -86,10 +99,12 @@ fn main() {
             clustersize,
             drivingfrequency,
         );
-        let mut phi_save_name = "phi_".to_string();
-        write!(phi_save_name, "N{}-tmax{}-dim{}.npy", n, tmax, dimension).unwrap();
-        write_npy(&phi_save_name, &phi);
+        match write_npy(&phi_save_name, &phi) {
+            Ok(_) => println!("Saved to {}", phi_save_name.display()),
+            Err(e) => println!("Error saving to {}: {}", phi_save_name.display(), e),
+        }
     } else {
+        // we haven't implemented anything for higher dimensions yet
         println!("Dimension {} not implemented", dimension);
     }
 }
@@ -100,7 +115,7 @@ mod tests {
 
     #[test]
     fn it_finds_max() {
-        // my first test!
+        /// my first test!
         assert_eq!(4.0, utils::max(&3.5, &4.0));
     }
 }
