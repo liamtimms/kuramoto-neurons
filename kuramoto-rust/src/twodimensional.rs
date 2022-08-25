@@ -4,15 +4,16 @@ use ndarray::prelude::*;
 use ndarray::Array;
 use ndarray_rand::rand_distr;
 use ndarray_rand::RandomExt;
+use ndarray_stats::QuantileExt;
 
 use crate::utils;
 
 fn find_delay(i: &usize, j: &usize, k: &usize, l: &usize, n: &usize, z: &f64) -> usize {
     // find the delay between oscillator at i, j and it's neighbor at k, l
     // tau[i][j][k][l]=  trunc(Z/N*sqrt( (min(abs(i-k), N-abs(i-k)))^2 +(min(abs(j-l), N-abs(j-l)))^2 ))
-    let x = (*i as f64 - *j as f64).abs();
+    let x = (*i as f64 - *k as f64).abs();
     let x_prime = *n as f64 - x; // wrap around
-    let y = (*i as f64 - *k as f64).abs();
+    let y = (*j as f64 - *l as f64).abs();
     let y_prime = *n as f64 - y; // wrap around
     let d = (utils::min(x, x_prime).powi(2) + utils::min(y, y_prime).powi(2)).sqrt();
 
@@ -49,6 +50,20 @@ fn calculate_delays(timemetric: &f64, n: &usize, dt: &f64) -> Array<usize, Ix4> 
         }
     }
     tau
+}
+
+fn set_tinitial(tau: &Array<usize, Ix4>) -> usize {
+    // set the initial time step
+    match tau.argmax() {
+        Ok(max_tau) => {
+            let max_tau = tau[max_tau];
+            max_tau as usize * 2 // fill out twice the delay
+        }
+        Err(_) => {
+            println!("Error: no maximum tau found");
+            0 // in principle this should never happen
+        }
+    }
 }
 
 fn driver(
@@ -153,8 +168,7 @@ fn model(
     alpha: &Array<f64, Ix4>,
 ) -> (Array<f64, Ix3>, Array<f64, Ix4>) {
     // replaces "function model(dt, tinitial, tmax, N, epsilon, dimension)" in igor
-    let mut summation = 0.0;
-    let mut phicurrent: Array<f64, Ix2> = Array::zeros((*n, *n));
+    // let mut phicurrent: Array<f64, Ix2> = Array::zeros((*n, *n));
 
     let pb = ProgressBar::new(((*tmax - 1) - *tinitial) as u64);
 
@@ -208,7 +222,7 @@ fn model(
                 for k in 0..*n {
                     for l in 0..*n {
                         let timewithdelay = t - tau[[i, j, k, l]] as usize;
-                        let factor = phicurrent[[i, j]] - phi[[k, l, timewithdelay]];
+                        let factor = phi[[i, j, t]] - phi[[k, l, timewithdelay]];
                         kcoupling[[i, j, k, l]] = kcoupling[[i, j, k, l]]
                             + (epsilon
                                 * (alpha[[i, j, k, l]] * factor.cos() - kcoupling[[i, j, k, l]])
@@ -232,7 +246,6 @@ pub fn run(
     g: f64,
     epsilon: f64,
     timemetric: f64,
-    tinitial: usize,
 
     clustersize: usize,
     drivingfrequency: f64,
@@ -243,13 +256,14 @@ pub fn run(
     let alpha: Array<f64, _> = Array::ones((n, n, n, n));
     let connectionmatrix: Array<f64, _> = Array::ones((n, n, n, n));
     println!("calculating delays...");
-    let tau: Array<usize, Ix4> = calculate_delays(&timemetric, &n, &dt);
 
     let omega: Array<f64, Ix2> =
         // Array::random(n, rand_distr::Normal::new(1.0, spreadinomega).unwrap());
     Array::random((n, n), rand_distr::Normal::new(1.0, spreadinomega).unwrap());
 
     let mut phi: Array<f64, Ix3> = initialize_phi(&n, &clustersize, &tmax);
+    let tau: Array<usize, Ix4> = calculate_delays(&timemetric, &n, &dt);
+    let tinitial: usize = set_tinitial(&tau);
 
     phi = driver(
         phi,
@@ -261,7 +275,7 @@ pub fn run(
         &omega,
     );
 
-    (phi, kcoupling) = model(
+    (phi, _) = model(
         phi,
         kcoupling,
         &omega,

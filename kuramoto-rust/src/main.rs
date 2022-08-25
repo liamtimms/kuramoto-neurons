@@ -15,8 +15,8 @@ mod utils;
 #[clap(author, version, about, long_about = None)]
 struct Args {
     /// The directory to save the results to
-    #[clap(short, long, parse(from_os_str))]
-    output_dir: std::path::PathBuf,
+    #[clap(short, long, value_parser, default_value_t = String::from("."))]
+    output_dir: String,
 
     /// Number of dimensions of the system
     #[clap(short, long, value_parser, default_value_t = 1)]
@@ -38,7 +38,7 @@ fn main() {
     let dimension = cli.dimension;
     let n: usize = cli.number; //Either the number of oscillators (1D) or the height/width of the square array
     let tmax: usize = cli.tmax; //the number of total time steps we are simulating (counts the initial conditions)
-    let output_dir: PathBuf = cli.output_dir;
+    let output_dir: PathBuf = PathBuf::from(cli.output_dir);
 
     // let dimension = 2;
     // let n: usize = 20; //Either the number of oscillators (1D) or the height/width of the square array
@@ -51,18 +51,22 @@ fn main() {
     let g: f64 = 1.0; //The initial coupling constant
     let epsilon: f64 = 0.1; //Speed of coupling change
     let timemetric: f64 = 2.0; //Zannette's "T" used only for initial conditions if timemetric2 != it.
-    let tinitial = 200; // the time step we start the simulation at
-                        // tinitial must be less than tmax and longer than longest time delay in the system
+
+    // let tinitial = 200; // the time step we start the simulation at
+    // tinitial must be less than tmax and longer than longest time delay in the system so we
+    // calculate it in the code now
 
     let _mode: i32 = 0; //Sets initial conditions:
-                        // 0->random phases, only one currently implemented
-                        // 1->same phase cluster, 2->plane wave cluster, 3->circles cluster
+                        // 0 -> random phases, ONLY ONE CURRENTLY IMPLEMENTED
+                        // 1 -> same phase cluster,
+                        // 2 -> plane wave cluster,
+                        // 3 -> circles cluster
     let clustersize = 0; //cluster=N for whole array to be driven
     let drivingfrequency: f64 = 1.0; //frequency that the oscillaotrs in the cluster will be forced to move at
 
     // setting up the output file name for later
     let mut phi_save_name = "phi_".to_string();
-    write!(phi_save_name, "N{}-tmax{}-dim{}.npy", n, tmax, dimension).unwrap();
+    write!(phi_save_name, "N{}-tmax{}-D{}.npy", n, tmax, dimension).unwrap();
     let phi_save_name = output_dir.join(phi_save_name);
 
     if dimension == 1 {
@@ -75,7 +79,6 @@ fn main() {
             g,
             epsilon,
             timemetric,
-            tinitial,
             clustersize,
             drivingfrequency,
         );
@@ -95,7 +98,6 @@ fn main() {
             g,
             epsilon,
             timemetric,
-            tinitial,
             clustersize,
             drivingfrequency,
         );

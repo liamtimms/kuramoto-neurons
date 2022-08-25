@@ -4,6 +4,7 @@ use ndarray::prelude::*;
 use ndarray::Array;
 use ndarray_rand::rand_distr;
 use ndarray_rand::RandomExt;
+use ndarray_stats::QuantileExt;
 
 use crate::utils;
 
@@ -38,6 +39,20 @@ fn calculate_delays(timemetric: &f64, n: &usize, dt: &f64) -> Array<usize, Ix2> 
         }
     }
     tau
+}
+
+fn set_tinitial(tau: &Array<usize, Ix2>) -> usize {
+    // set the initial time step
+    match tau.argmax() {
+        Ok(max_tau) => {
+            let max_tau = tau[max_tau];
+            max_tau as usize * 2 // fill out twice the delay
+        }
+        Err(_) => {
+            println!("Error: no maximum tau found");
+            0 // in principle this should never happen
+        }
+    }
 }
 
 fn calc_order_params(
@@ -244,8 +259,7 @@ fn model(
     alpha: &Array<f64, Ix2>,
 ) -> (Array<f64, Ix2>, Array<f64, Ix2>) {
     // replaces "function model(dt, tinitial, tmax, N, epsilon, dimension)" in igor
-    let mut summation = 0.0;
-    let mut phicurrent: Array<f64, Ix1> = Array::zeros(*n);
+    // let mut phicurrent: Array<f64, Ix1> = Array::zeros(*n);
 
     let pb = ProgressBar::new(((*tmax - 1) - *tinitial) as u64);
 
@@ -282,7 +296,7 @@ fn model(
         for i in 0..*n {
             for j in 0..*n {
                 let timewithdelay = t - tau[[i, j]] as usize;
-                let factor = phicurrent[i] - phi[[j, timewithdelay]];
+                let factor = phi[[i, t]] - phi[[j, timewithdelay]];
                 kcoupling[[i, j]] = kcoupling[[i, j]]
                     + (epsilon * (alpha[[i, j]] * factor.cos() - kcoupling[[i, j]]) * dt);
             }
@@ -301,11 +315,23 @@ fn op_compare(
 ) {
     let mut current_max = 0.0;
 
+    let mut current_string = String::new();
     for m in 0..5 {
         if order_parameter[[m, *tmax - 1]] > current_max {
             current_max = order_parameter[[m, *tmax - 1]];
+            current_string =
+                format!("It is single cluster, mode={m}, with OrderParameter={current_max}");
+        } else if order_parameter2_cluster[[m, *tmax - 1]] > current_max {
+            current_max = order_parameter2_cluster[[m, *tmax - 1]];
+            current_string =
+                format!("It is unconnected 2 cluster, mode={m}, with OrderParameter={current_max}");
+        } else if order_parameter2_cluster_connected[[m, *tmax - 1]] > current_max {
+            current_max = order_parameter2_cluster_connected[[m, *tmax - 1]];
+            current_string =
+                format!("It is connected 2 cluster, mode={m}, with OrderParameter={current_max}");
         }
     }
+    println!("{}", current_string);
 }
 
 pub fn run(
@@ -317,7 +343,6 @@ pub fn run(
     g: f64,
     epsilon: f64,
     timemetric: f64,
-    tinitial: usize,
 
     clustersize: usize,
     drivingfrequency: f64,
@@ -334,14 +359,15 @@ pub fn run(
     let alpha: Array<f64, _> = Array::ones((n, n));
     let connectionmatrix: Array<f64, _> = Array::ones((n, n));
 
-    let tau: Array<usize, Ix2> = calculate_delays(&timemetric, &n, &dt);
-
     // TODO: check implmentation of this normal distribution
     let omega: Array<f64, Ix1> =
         Array::random(n, rand_distr::Normal::new(1.0, spreadinomega).unwrap());
 
     // initial conditions
     let mut phi: Array<f64, Ix2> = initialize_phi(&n, &clustersize, &tmax);
+    let tau: Array<usize, Ix2> = calculate_delays(&timemetric, &n, &dt);
+    let tinitial: usize = set_tinitial(&tau);
+    println!("tinitial = {}", tinitial);
     // println!("phi shape: {:?}", phi.shape()[0]);
 
     // driving the cluster for the initial time
@@ -356,7 +382,7 @@ pub fn run(
     );
 
     // run the actual model
-    (phi, kcoupling) = model(
+    (phi, _) = model(
         phi,
         kcoupling,
         &omega,
@@ -374,7 +400,15 @@ pub fn run(
     let (order_parameter, order_parameter2_cluster, order_parameter2_cluster_connected) =
         calc_order_params(&phi, &n, &tmax);
 
-    let finalfrequencies = final_freqs(&phi, &n, &dt, &tmax);
+    op_compare(
+        &tmax,
+        &order_parameter,
+        &order_parameter2_cluster,
+        &order_parameter2_cluster_connected,
+    );
+
+    // finalfrequencies characterization currently unused
+    // let finalfrequencies = final_freqs(&phi, &n, &dt, &tmax);
 
     // TODO: figure out saving the data
     // possibly consider moving model into a struct
