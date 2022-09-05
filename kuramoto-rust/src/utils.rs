@@ -1,14 +1,46 @@
 use ndarray::prelude::*;
-use ndarray::Array;
+use ndarray::{Array, ErrorKind, ShapeError};
 
-// Currently unused struct
-struct KuramotoCircle {
-    // a 1D circle of oscillators (2nd dimension is the time)
-    phi: Array<f64, Ix2>,       // the phase of each oscillator in rads
-    omega: Array<f64, Ix2>,     // the angular velocity of each oscillator
-    kcoupling: Array<f64, Ix2>, // the coupling constant of each oscillator
-    alpha: f64,                 // a constant that controls the strength of the coupling
-    epsilon: f64,               // constant to adjust dynamic level of coupling
+// Help from friend on how to do this
+pub enum MyArray<A> {
+    Array2(Array2<A>),
+    Array3(Array3<A>),
+}
+
+// ArrayD is a dynamic-dimensional array from ndarray
+impl<A> From<MyArray<A>> for ArrayD<A> {
+    fn from(arr: MyArray<A>) -> Self {
+        match arr {
+            MyArray::Array2(array2) => array2.into_dyn(),
+            MyArray::Array3(array3) => array3.into_dyn(),
+        }
+    }
+}
+
+// need to understand array traits better
+impl<A> TryFrom<ArrayD<A>> for MyArray<A> {
+    type Error = ShapeError;
+
+    fn try_from(arr: ArrayD<A>) -> Result<MyArray<A>, Self::Error> {
+        match arr.ndim() {
+            2 => arr.into_dimensionality::<Ix2>().map(MyArray::Array2),
+            3 => arr.into_dimensionality::<Ix3>().map(MyArray::Array3),
+            _ => Err(ShapeError::from_kind(ErrorKind::IncompatibleShape)),
+        }
+    }
+}
+
+// really high level stuff here
+impl<A: Default> MyArray<A> {
+    fn apply<R>(&mut self, func: impl FnOnce(&mut ArrayD<A>) -> R) -> R {
+        // Calling 'Into::into' consumes "self"
+        // we make a copy of "self" to avoid consuming it
+        let my_array = std::mem::replace(self, MyArray::Array2(Array2::default([0, 0])));
+        let mut dyn_array: ArrayD<A> = my_array.into();
+        let result = func(&mut dyn_array);
+        *self = dyn_array.try_into().unwrap();
+        result
+    }
 }
 
 pub fn max(a: &f64, b: &f64) -> f64 {

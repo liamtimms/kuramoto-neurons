@@ -180,28 +180,31 @@ fn model(
         // Evolution of the Oscillators
         for i in 0..*n {
             for j in 0..*n {
-                phi[[i, j, t + 1]] = update_oscillator(
-                    &t,
-                    &i,
-                    &j,
-                    &phi,
-                    &tau,
-                    &omega,
-                    &kcoupling,
-                    &connectionmatrix,
-                    &dt,
-                );
-                // phi[[i, j, t + 1]] = update_oscillator_parallel(
-                //     &t,
-                //     &i,
-                //     &j,
-                //     &phi,
-                //     &tau,
-                //     &omega,
-                //     &kcoupling,
-                //     &connectionmatrix,
-                //     &dt,
-                // );
+                if n < &100 {
+                    phi[[i, j, t + 1]] = update_oscillator(
+                        &t,
+                        &i,
+                        &j,
+                        &phi,
+                        &tau,
+                        &omega,
+                        &kcoupling,
+                        &connectionmatrix,
+                        &dt,
+                    );
+                } else {
+                    phi[[i, j, t + 1]] = update_oscillator_parallel(
+                        &t,
+                        &i,
+                        &j,
+                        &phi,
+                        &tau,
+                        &omega,
+                        &kcoupling,
+                        &connectionmatrix,
+                        &dt,
+                    );
+                }
             }
         }
 
@@ -239,7 +242,7 @@ fn model(
 
 pub fn run(
     n: usize,
-    tmax: usize,
+    timesim: usize,
     dt: f64,
     spreadinomega: f64,
 
@@ -249,7 +252,7 @@ pub fn run(
 
     clustersize: usize,
     drivingfrequency: f64,
-) -> Array<f64, Ix3> {
+) -> utils::MyArray<f64> {
     let mut kcoupling: Array<f64, Ix4> = Array::zeros((n, n, n, n));
     kcoupling.fill(g);
 
@@ -261,10 +264,15 @@ pub fn run(
         // Array::random(n, rand_distr::Normal::new(1.0, spreadinomega).unwrap());
     Array::random((n, n), rand_distr::Normal::new(1.0, spreadinomega).unwrap());
 
-    let mut phi: Array<f64, Ix3> = initialize_phi(&n, &clustersize, &tmax);
+    // initial conditions
     let tau: Array<usize, Ix4> = calculate_delays(&timemetric, &n, &dt);
     let tinitial: usize = set_tinitial(&tau);
+    let tmax: usize = tinitial + timesim + 1;
+    println!("tinitial = {}", tinitial);
 
+    let mut phi: Array<f64, Ix3> = initialize_phi(&n, &clustersize, &tmax);
+
+    // driving the cluster for the initial time
     phi = driver(
         phi,
         &dt,
@@ -275,6 +283,7 @@ pub fn run(
         &omega,
     );
 
+    // run the actual model
     (phi, _) = model(
         phi,
         kcoupling,
@@ -289,5 +298,6 @@ pub fn run(
         &alpha,
     );
 
+    let phi = utils::MyArray::<f64>::Array3(phi);
     phi
 }
