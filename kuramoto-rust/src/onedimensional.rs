@@ -336,7 +336,7 @@ fn op_compare(
 
 pub fn run(
     n: usize,
-    tmax: usize,
+    timesim: usize,
     dt: f64,
     spreadinomega: f64,
 
@@ -351,9 +351,9 @@ pub fn run(
     kcoupling.fill(g);
 
     // TODO: figure out the use of these "waves" and variables from old code
-    let mut _tt: Array<f64, _> = Array::zeros(n * tmax);
-    let mut _freqs: Array<f64, _> = Array::zeros(n * tmax);
-    let _epsilon_counter = 0;
+    // let mut _tt: Array<f64, _> = Array::zeros(n * tmax);
+    // let mut _freqs: Array<f64, _> = Array::zeros(n * tmax);
+    // let _epsilon_counter = 0;
 
     // TODO: better documenation on the differences between these
     let alpha: Array<f64, _> = Array::ones((n, n));
@@ -364,10 +364,12 @@ pub fn run(
         Array::random(n, rand_distr::Normal::new(1.0, spreadinomega).unwrap());
 
     // initial conditions
-    let mut phi: Array<f64, Ix2> = initialize_phi(&n, &clustersize, &tmax);
     let tau: Array<usize, Ix2> = calculate_delays(&timemetric, &n, &dt);
     let tinitial: usize = set_tinitial(&tau);
     println!("tinitial = {}", tinitial);
+    let tmax: usize = &tinitial + &timesim;
+
+    let mut phi: Array<f64, Ix2> = initialize_phi(&n, &clustersize, &tmax);
     // println!("phi shape: {:?}", phi.shape()[0]);
 
     // driving the cluster for the initial time

@@ -28,7 +28,7 @@ struct Args {
 
     /// Number of steps to run the simulation
     #[clap(short, long, value_parser, default_value_t = 500)]
-    tmax: usize,
+    timesim: usize,
 }
 
 fn main() {
@@ -37,7 +37,7 @@ fn main() {
 
     let dimension = cli.dimension;
     let n: usize = cli.number; //Either the number of oscillators (1D) or the height/width of the square array
-    let tmax: usize = cli.tmax; //the number of total time steps we are simulating (counts the initial conditions)
+    let timesim: usize = cli.timesim; //the number of total time steps we are simulating (counts the initial conditions)
     let output_dir: PathBuf = PathBuf::from(cli.output_dir);
 
     // let dimension = 2;
@@ -66,14 +66,14 @@ fn main() {
 
     // setting up the output file name for later
     let mut phi_save_name = "phi_".to_string();
-    write!(phi_save_name, "N{}-tmax{}-D{}.npy", n, tmax, dimension).unwrap();
+    write!(phi_save_name, "N{}-tmax{}-D{}.npy", n, timesim, dimension).unwrap();
     let phi_save_name = output_dir.join(phi_save_name);
 
     if dimension == 1 {
         // calling the 1D simulation
         let phi = onedimensional::run(
             n,
-            tmax,
+            timesim,
             dt,
             spreadinomega,
             g,
@@ -92,7 +92,7 @@ fn main() {
         // calling the 2D simulation
         let phi = twodimensional::run(
             n,
-            tmax,
+            timesim,
             dt,
             spreadinomega,
             g,

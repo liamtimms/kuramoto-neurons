@@ -239,7 +239,7 @@ fn model(
 
 pub fn run(
     n: usize,
-    tmax: usize,
+    timesim: usize,
     dt: f64,
     spreadinomega: f64,
 
@@ -261,9 +261,11 @@ pub fn run(
         // Array::random(n, rand_distr::Normal::new(1.0, spreadinomega).unwrap());
     Array::random((n, n), rand_distr::Normal::new(1.0, spreadinomega).unwrap());
 
-    let mut phi: Array<f64, Ix3> = initialize_phi(&n, &clustersize, &tmax);
     let tau: Array<usize, Ix4> = calculate_delays(&timemetric, &n, &dt);
     let tinitial: usize = set_tinitial(&tau);
+    let tmax: usize = &tinitial + &timesim;
+
+    let mut phi: Array<f64, Ix3> = initialize_phi(&n, &clustersize, &tmax);
 
     phi = driver(
         phi,
