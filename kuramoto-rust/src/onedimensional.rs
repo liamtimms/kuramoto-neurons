@@ -2,6 +2,7 @@ use indicatif::ProgressBar;
 use ndarray::parallel::prelude::*;
 use ndarray::prelude::*;
 use ndarray::Array;
+use ndarray_rand::rand::distributions::{Distribution, Uniform};
 use ndarray_rand::rand_distr;
 use ndarray_rand::RandomExt;
 use ndarray_stats::QuantileExt;
@@ -46,7 +47,7 @@ fn set_tinitial(tau: &Array<usize, Ix2>) -> usize {
     match tau.argmax() {
         Ok(max_tau) => {
             let max_tau = tau[max_tau];
-            max_tau as usize * 2 // fill out twice the delay
+            max_tau as usize * 3 // fill out thrice the delay
         }
         Err(_) => {
             println!("Error: no maximum tau found");
@@ -163,8 +164,15 @@ fn final_freqs(phi: &Array<f64, Ix2>, n: &usize, dt: &f64, tmax: &usize) -> Arra
 fn initialize_phi(n: &usize, clustersize: &usize, tmax: &usize) -> Array<f64, Ix2> {
     // replaces "function initialconditions1(N,clustersize, dimension)" in igor
     let mut phi: Array<f64, Ix2> = Array::zeros((*n, *tmax));
+
+    let mut rng = ndarray_rand::rand::thread_rng();
+    let circle = Uniform::new(0.0, 2.0 * std::f64::consts::PI);
+
     for i in 0..*clustersize {
-        phi[[i, 0]] = 1.0;
+        phi[[i, 0]] = 3.14159;
+    }
+    for i in *clustersize..*n {
+        phi[[i, 0]] = circle.sample(&mut rng);
     }
     phi
 }

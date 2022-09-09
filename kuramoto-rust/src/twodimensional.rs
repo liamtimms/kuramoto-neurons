@@ -2,6 +2,7 @@ use indicatif::ProgressBar;
 use ndarray::parallel::prelude::*;
 use ndarray::prelude::*;
 use ndarray::Array;
+use ndarray_rand::rand::distributions::{Distribution, Uniform};
 use ndarray_rand::rand_distr;
 use ndarray_rand::RandomExt;
 use ndarray_stats::QuantileExt;
@@ -23,11 +24,21 @@ fn find_delay(i: &usize, j: &usize, k: &usize, l: &usize, n: &usize, z: &f64) ->
 fn initialize_phi(n: &usize, clustersize: &usize, tmax: &usize) -> Array<f64, Ix3> {
     // replaces "function initialconditions1(N,clustersize, dimension)" in igor
     let mut phi: Array<f64, Ix3> = Array::zeros((*n, *n, *tmax));
+
+    let mut rng = ndarray_rand::rand::thread_rng();
+    let circle = Uniform::new(0.0, 2.0 * std::f64::consts::PI);
+
     for i in 0..*clustersize {
         for j in 0..*clustersize {
             phi[[i, j, 0]] = 1.0;
         }
     }
+    for i in *clustersize..*n {
+        for j in *clustersize..*n {
+            phi[[i, j, 0]] = circle.sample(&mut rng);
+        }
+    }
+
     phi
 }
 
@@ -57,7 +68,7 @@ fn set_tinitial(tau: &Array<usize, Ix4>) -> usize {
     match tau.argmax() {
         Ok(max_tau) => {
             let max_tau = tau[max_tau];
-            max_tau as usize * 2 // fill out twice the delay
+            max_tau as usize * 3 // fill out thrice the delay
         }
         Err(_) => {
             println!("Error: no maximum tau found");
