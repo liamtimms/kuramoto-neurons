@@ -25,7 +25,7 @@ fn calculate_delays(timemetric: &f64, n: &usize, dt: &f64) -> Array<usize, Ix2> 
             if i != j {
                 tau[[i, j]] = find_delay(&i, &j, &*n, &z);
             } else {
-                tau[(i, j)] = 0 as usize;
+                tau[(i, j)] = 0;
             }
         }
     }
@@ -187,7 +187,7 @@ fn update_oscillator(
     omega: &Array<f64, Ix1>,
     kcoupling: &Array<f64, Ix3>,
     connectionmatrix: &Array<f64, Ix2>,
-    dt: &f64,
+    dt: f64,
 ) -> f64 {
     let mut summation = 0.0;
     let phi_current = phi[[*i, *t]];
@@ -196,8 +196,8 @@ fn update_oscillator(
         let diff = phi[[j, (t - tau[[*i, j]])]] - phi_current;
         summation += kcoupling[[*i, j, *t]] * diff.sin() * connectionmatrix[[*i, j]];
     }
-    let phi_new = phi_current + (omega[*i] + (summation / n as f64)) * dt;
-    phi_new
+
+    phi_current + (omega[*i] + (summation / n as f64)) * dt
 }
 
 // fn update_oscillator_parallel(
@@ -262,7 +262,7 @@ fn model(
                 &omega,
                 &kcoupling,
                 &connectionmatrix,
-                &dt,
+                *dt,
             );
         }
 
@@ -272,13 +272,13 @@ fn model(
                 let timewithdelay = t - tau[[i, j]] as usize;
                 let factor = phi[[i, t]] - phi[[j, timewithdelay]];
                 kcoupling[[i, j, t + 1]] = kcoupling[[i, j, t]]
-                    + (epsilon * (alpha[[i, j]] * factor.cos() - kcoupling[[i, j, t]]) * dt);
+                    + (epsilon * (alpha[[i, j]] * factor.cos() - kcoupling[[i, j, t]]) * *dt);
             }
         }
     }
     // END OF TIME (1D)
     pb.finish_with_message("Done with modeling");
-    return (phi, kcoupling);
+    (phi, kcoupling)
 }
 
 fn op_compare(
@@ -331,7 +331,7 @@ pub fn run(
     let tau: Array<usize, Ix2> = calculate_delays(&timemetric, &n, &dt);
     let tinitial: usize = set_tinitial(&tau);
     println!("tinitial = {}", tinitial);
-    let tmax: usize = &tinitial + &timesim;
+    let tmax: usize = tinitial + timesim;
 
     let mut kcoupling: Array<f64, Ix3> = Array::zeros((n, n, tmax)); // coupling strength
     kcoupling.fill(g);

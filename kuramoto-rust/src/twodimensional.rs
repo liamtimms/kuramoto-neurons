@@ -30,7 +30,7 @@ fn initialize_phi(n: &usize, clustersize: &usize, tmax: &usize) -> Array<f64, Ix
 
     for i in 0..*clustersize {
         for j in 0..*clustersize {
-            phi[[i, j, 0]] = 1.0;
+            phi[[i, j, 0]] = std::f64::consts::PI;
         }
     }
     for i in *clustersize..*n {
@@ -54,7 +54,7 @@ fn calculate_delays(timemetric: &f64, n: &usize, dt: &f64) -> Array<usize, Ix4> 
                     if i != j {
                         tau[[i, j, k, l]] = find_delay(&i, &j, &k, &l, &*n, &z);
                     } else {
-                        tau[(i, j, k, l)] = 0 as usize;
+                        tau[(i, j, k, l)] = 0;
                     }
                 }
             }
@@ -120,13 +120,12 @@ fn update_oscillator(
     for k in 0..n {
         for l in 0..n {
             let timewithdelay = t - tau[[*i, *j, k, l]] as usize;
-            let factor = phi[[k, l, timewithdelay]] - phi_current;
-            summation +=
-                kcoupling[[*i, *j, k, l]] * factor.sin() * connectionmatrix[[*i, *j, k, l]];
+            let diff = phi[[k, l, timewithdelay]] - phi_current;
+            summation += kcoupling[[*i, *j, k, l]] * diff.sin() * connectionmatrix[[*i, *j, k, l]];
         }
     }
-    let phi_new = phi_current + (omega[[*i, *j]] + (summation / n as f64)) * dt;
-    phi_new
+    // returning a "phi_new"
+    phi_current + (omega[[*i, *j]] + (summation / n as f64)) * dt
 }
 
 fn update_oscillator_parallel(
@@ -150,16 +149,16 @@ fn update_oscillator_parallel(
             let mut inner_sum = 0.0;
             for l in 0..n {
                 let timewithdelay = t - tau[[*i, *j, k, l]] as usize;
-                let factor = phi[[k, l, timewithdelay]] - phi_current;
+                let diff = phi[[k, l, timewithdelay]] - phi_current;
                 inner_sum +=
-                    kcoupling[[*i, *j, k, l]] * factor.sin() * connectionmatrix[[*i, *j, k, l]];
+                    kcoupling[[*i, *j, k, l]] * diff.sin() * connectionmatrix[[*i, *j, k, l]];
             }
             inner_sum
         })
         .reduce(|| 0.0, |a, b| a + b);
 
-    let phi_new = phi_current + (omega[[*i, *j]] + (summation / n as f64)) * dt; /* error here */
-    phi_new
+    // returning a "phi_new"
+    phi_current + (omega[[*i, *j]] + (summation / n as f64)) * dt
 }
 
 fn model(
@@ -189,43 +188,39 @@ fn model(
         pb.inc(1); // update progressbar
 
         // Evolution of the Oscillators
-        for i in 0..*n {
-            for j in 0..*n {
-                phi[[i, j, t + 1]] = update_oscillator(
-                    &t,
-                    &i,
-                    &j,
-                    &phi,
-                    &tau,
-                    &omega,
-                    &kcoupling,
-                    &connectionmatrix,
-                    &dt,
-                );
-                // phi[[i, j, t + 1]] = update_oscillator_parallel(
-                //     &t,
-                //     &i,
-                //     &j,
-                //     &phi,
-                //     &tau,
-                //     &omega,
-                //     &kcoupling,
-                //     &connectionmatrix,
-                //     &dt,
-                // );
+        if *n < 100 {
+            for i in 0..*n {
+                for j in 0..*n {
+                    phi[[i, j, t + 1]] = update_oscillator(
+                        &t,
+                        &i,
+                        &j,
+                        &phi,
+                        &tau,
+                        &omega,
+                        &kcoupling,
+                        &connectionmatrix,
+                        dt,
+                    );
+                }
+            }
+        } else {
+            for i in 0..*n {
+                for j in 0..*n {
+                    phi[[i, j, t + 1]] = update_oscillator_parallel(
+                        &t,
+                        &i,
+                        &j,
+                        &phi,
+                        &tau,
+                        &omega,
+                        &kcoupling,
+                        &connectionmatrix,
+                        dt,
+                    );
+                }
             }
         }
-
-        // attempt at iteration over all oscillators
-        // let phicurrent = phi.slice(s![.., t]);
-        // for (i, value) in phicurrent.indexed_iter() {
-        //     println!("value {} for index {} at time {}", value, i, t);
-        // }
-
-        // attempt at parallel iteration over all oscillators
-        // Zip::indexed(phicurrent).par_for_each(|i, value| {
-        //     println!("value {} for index {} at time {}", value, i, t);
-        // });
 
         //Evolution of Coupling
         for i in 0..*n {
@@ -245,7 +240,7 @@ fn model(
     }
     // END OF TIME (1D)
     pb.finish_with_message("Done with modeling");
-    return (phi, kcoupling);
+    (phi, kcoupling)
 }
 
 pub fn run(
@@ -274,7 +269,7 @@ pub fn run(
 
     let tau: Array<usize, Ix4> = calculate_delays(&timemetric, &n, &dt);
     let tinitial: usize = set_tinitial(&tau);
-    let tmax: usize = &tinitial + &timesim;
+    let tmax: usize = tinitial + timesim;
 
     let mut phi: Array<f64, Ix3> = initialize_phi(&n, &clustersize, &tmax);
 

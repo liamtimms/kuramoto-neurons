@@ -1,14 +1,10 @@
-use ndarray::prelude::*;
-use ndarray::Array;
+use std::path::Path;
+use std::path::PathBuf;
 
-// Currently unused struct
-struct KuramotoCircle {
-    // a 1D circle of oscillators (2nd dimension is the time)
-    phi: Array<f64, Ix2>,       // the phase of each oscillator in rads
-    omega: Array<f64, Ix2>,     // the angular velocity of each oscillator
-    kcoupling: Array<f64, Ix2>, // the coupling constant of each oscillator
-    alpha: f64,                 // a constant that controls the strength of the coupling
-    epsilon: f64,               // constant to adjust dynamic level of coupling
+pub fn update_name(output_dir: &Path, base_name: &str, identifier: &str) -> PathBuf {
+    let mut new_name = base_name.to_owned();
+    new_name.push_str(identifier);
+    output_dir.join(new_name)
 }
 
 pub fn max(a: &f64, b: &f64) -> f64 {
