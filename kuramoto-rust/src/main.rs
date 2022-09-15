@@ -1,16 +1,64 @@
+//! Coupled Kuramoto oscillator simulation with learning and delay.
+//!
+//! Provides a way to simulate 1D and 2D Kuramoto oscillators with their coupling
+//! governed by Hebbian learning rules and a time delay to simulate axons.
+//! It is:
+//! - Very fast for 1D case
+//! - Faster than alternatives for 2D case
+//! - Parallelized for large number of oscillators in 2D
+//!
+//! # Examples
+//!
+//! ```bash
+//! $ mkdir simulation_data
+//! $ ./kuramoto_rust -d 1 -n 50 -o simulation_data/
+//! ```
+//!
+//! Multiple simulations can be run in parallel or series
+//! using a tool like GNU parallel and some basic bash scripting.
+//!
+//! # Arguments
+//!
+//! Takes a set of command line arguments to specify the simulation parameters.
+//! The basic parameters are:
+//! - `-h` - help message, information about the parameters
+//! - `-d` - dimension of the oscillator space
+//! - `-n` - number of oscillators (1D case) or number of oscillators per dimension (2D case)
+//! - `-t` - number of time steps to simulate
+//! - `-o` - output directory
+//!
+//! Parameters to further specify the model and initial conditions:
+//! - `-s` - spread (standard deviation) in natural fequencies (omega) of each oscillator
+//! - `-e` - epsilon for Hebbian learning, i.e. learning rate
+//! - `-c` - seperate cluster size
+//! - `-g` - initial coupling strength
+//! - `--timemetric` - Zannette's time metric
+//! - `--drivingfrequency` - frequency to drive the oscillators in the cluster during initial
+//! conditions
+//!
+//! # Output
+//!
+//! The output is a two `.npy` files, one for the phases and one for the coupling strengths.
+//! These store the values of the phases and coupling strengths at each time step. These can then
+//! be loaded and investigated further in Python with `numpy` and `matplotlib` (or other python plotting
+//! libraries like `seaborn`.) See github README for more information.
+
+#![warn(missing_docs)]
 extern crate ndarray;
 
 use ndarray_npy::write_npy;
-use std::fmt::Write;
 use std::path::PathBuf;
 
 use clap::Parser;
 
+/// One dimensional model
 mod onedimensional;
+/// Two dimensional model
 mod twodimensional;
+/// Utility functions useful for all models
 mod utils;
 
-/// CLI arguments
+/// CLI arguments for the program
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
 struct Args {
@@ -51,7 +99,7 @@ struct Args {
     epsilon: f64,
 
     /// driving frequency
-    #[clap(short, long, value_parser, default_value_t = 1.0)]
+    #[clap(long, value_parser, default_value_t = 1.0)]
     drivingfrequency: f64,
 
     /// Size of cluster
@@ -59,6 +107,7 @@ struct Args {
     clustersize: usize,
 }
 
+/// Main function parses arguments, calls the simulation modules and saves the results
 fn main() {
     // all parameters
     let cli = Args::parse();
@@ -101,16 +150,23 @@ fn main() {
     if clustersize > n {
         panic!("Cluster size must be less than or equal to the number of oscillators");
     }
-    let drivingfrequency: f64 = cli.drivingfrequency; //frequency that the oscillaotrs in the cluster will be forced to move at
+    let drivingfrequency: f64 = cli.drivingfrequency; //frequency that the oscillaotrs in the cluster will be forced to move at during initial conditions
 
     // setting up the output file name for later
-    let mut phi_save_name = "phi_".to_string();
-    write!(phi_save_name, "N{}-tmax{}-D{}.npy", n, timesim, dimension).unwrap();
-    let phi_save_name = output_dir.join(phi_save_name);
+
+    let identifier = format!(
+        "N{n}-D{dimension}-t{timesim}-T{timemetric}-ostd{spreadinomega}-g{g}-e{epsilon}-C{clustersize}-do{drivingfrequency}.npy"
+    );
+
+    let phi_base = "phi_".to_string();
+    let phi_save_name = utils::update_name(&output_dir, &phi_base, &identifier);
+
+    let k_base = "K_".to_string();
+    let k_save_name = utils::update_name(&output_dir, &k_base, &identifier);
 
     if dimension == 1 {
         // calling the 1D simulation
-        let phi = onedimensional::run(
+        let (phi, kcoupling) = onedimensional::run(
             n,
             timesim,
             dt,
@@ -126,6 +182,10 @@ fn main() {
         match write_npy(&phi_save_name, &phi) {
             Ok(_) => println!("Saved to {}", phi_save_name.display()),
             Err(e) => println!("Error saving to {}: {}", phi_save_name.display(), e),
+        }
+        match write_npy(&k_save_name, &kcoupling) {
+            Ok(_) => println!("Saved to {}", k_save_name.display()),
+            Err(e) => println!("Error saving to {}: {}", k_save_name.display(), e),
         }
     } else if dimension == 2 {
         // calling the 2D simulation
@@ -156,7 +216,7 @@ mod tests {
 
     #[test]
     fn it_finds_max() {
-        /// my first test!
+        // my first test!
         assert_eq!(4.0, utils::max(&3.5, &4.0));
     }
 }
