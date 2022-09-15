@@ -1,5 +1,4 @@
 use indicatif::ProgressBar;
-use ndarray::parallel::prelude::*;
 use ndarray::prelude::*;
 use ndarray::Array;
 use ndarray_rand::rand::distributions::{Distribution, Uniform};
@@ -13,16 +12,7 @@ fn find_delay(i: &usize, j: &usize, n: &usize, z: &f64) -> usize {
     // find the delay between oscillator i and it's neighbor j
     let x = (*i as f64 - *j as f64).abs();
     let y = *n as f64 - x; // wrap around otherside of the circle
-    let d = {
-        // find minimum distance
-        if x <= y {
-            x
-        } else if x > y {
-            y
-        } else {
-            0.0
-        }
-    };
+    let d = utils::min(x, y);
     ((z / *n as f64) * d).round() as usize
 }
 
@@ -149,18 +139,6 @@ fn calc_order_params(
     )
 }
 
-fn final_freqs(phi: &Array<f64, Ix2>, n: &usize, dt: &f64, tmax: &usize) -> Array<f64, Ix1> {
-    let delta_t = 20;
-    let mut finalfrequencies: Array<f64, Ix1> = Array::zeros(*n);
-    for i in 0..*n {
-        let comparisontime = *tmax - (delta_t + 1);
-        finalfrequencies[i] =
-            (phi[[i, *tmax - 1]] - phi[[i, comparisontime]]) / (delta_t as f64 * dt);
-        finalfrequencies[i] = finalfrequencies[i] * dt;
-    }
-    finalfrequencies
-}
-
 fn initialize_phi(n: &usize, clustersize: &usize, tmax: &usize) -> Array<f64, Ix2> {
     // replaces "function initialconditions1(N,clustersize, dimension)" in igor
     let mut phi: Array<f64, Ix2> = Array::zeros((*n, *tmax));
@@ -169,7 +147,7 @@ fn initialize_phi(n: &usize, clustersize: &usize, tmax: &usize) -> Array<f64, Ix
     let circle = Uniform::new(0.0, 2.0 * std::f64::consts::PI);
 
     for i in 0..*clustersize {
-        phi[[i, 0]] = 3.14159;
+        phi[[i, 0]] = std::f64::consts::PI;
     }
     for i in *clustersize..*n {
         phi[[i, 0]] = circle.sample(&mut rng);
@@ -207,7 +185,7 @@ fn update_oscillator(
     phi: &Array<f64, Ix2>,
     tau: &Array<usize, Ix2>,
     omega: &Array<f64, Ix1>,
-    kcoupling: &Array<f64, Ix2>,
+    kcoupling: &Array<f64, Ix3>,
     connectionmatrix: &Array<f64, Ix2>,
     dt: &f64,
 ) -> f64 {
@@ -215,45 +193,44 @@ fn update_oscillator(
     let phi_current = phi[[*i, *t]];
     let n = phi.shape()[0];
     for j in 0..n {
-        let timewithdelay = t - tau[[*i, j]] as usize;
-        let factor = phi[[j, timewithdelay]] - phi_current;
-        summation += kcoupling[[*i, j]] * factor.sin() * connectionmatrix[[*i, j]];
+        let diff = phi[[j, (t - tau[[*i, j]])]] - phi_current;
+        summation += kcoupling[[*i, j, *t]] * diff.sin() * connectionmatrix[[*i, j]];
     }
     let phi_new = phi_current + (omega[*i] + (summation / n as f64)) * dt;
     phi_new
 }
 
-fn update_oscillator_parallel(
-    t: &usize,
-    i: &usize,
-    phi: &Array<f64, Ix2>,
-    tau: &Array<usize, Ix2>,
-    omega: &Array<f64, Ix1>,
-    kcoupling: &Array<f64, Ix2>,
-    connectionmatrix: &Array<f64, Ix2>,
-    dt: &f64,
-) -> f64 {
-    // SLOWER than update_oscillator in all tests
-    let phi_current = phi[[*i, *t]];
-    let n = phi.shape()[0];
-    // based on https://www.anycodings.com/1questions/5406370/how-to-use-rayon-for-parallel-calculation-of-pi
-    let summation: f64 = (0..n)
-        .into_par_iter()
-        .map(|j| {
-            let timewithdelay = t - tau[[*i, j]] as usize;
-            let factor = phi[[j, timewithdelay]] - phi_current;
-            ((kcoupling[[*i, j]] * factor.sin() * connectionmatrix[[*i, j]]) as f64) as f64
-        })
-        .reduce(|| 0.0, |a, b| a + b);
-
-    let phi_new = phi_current + (omega[*i] + (summation / n as f64)) * dt; /* error here */
-    phi_new
-}
+// fn update_oscillator_parallel(
+//     t: &usize,
+//     i: &usize,
+//     phi: &Array<f64, Ix2>,
+//     tau: &Array<usize, Ix2>,
+//     omega: &Array<f64, Ix1>,
+//     kcoupling: &Array<f64, Ix2>,
+//     connectionmatrix: &Array<f64, Ix2>,
+//     dt: &f64,
+// ) -> f64 {
+//     // SLOWER than update_oscillator in all tests
+//     let phi_current = phi[[*i, *t]];
+//     let n = phi.shape()[0];
+//     // based on https://www.anycodings.com/1questions/5406370/how-to-use-rayon-for-parallel-calculation-of-pi
+//     let summation: f64 = (0..n)
+//         .into_par_iter()
+//         .map(|j| {
+//             let timewithdelay = t - tau[[*i, j]] as usize;
+//             let factor = phi[[j, timewithdelay]] - phi_current;
+//             ((kcoupling[[*i, j]] * factor.sin() * connectionmatrix[[*i, j]]) as f64) as f64
+//         })
+//         .reduce(|| 0.0, |a, b| a + b);
+//
+//     let phi_new = phi_current + (omega[*i] + (summation / n as f64)) * dt; /* error here */
+//     phi_new
+// }
 
 fn model(
     // parameters for oscillators
     mut phi: Array<f64, Ix2>,
-    mut kcoupling: Array<f64, Ix2>,
+    mut kcoupling: Array<f64, Ix3>,
     omega: &Array<f64, Ix1>,
     // parameters of the simulation itself
     dt: &f64,
@@ -265,7 +242,7 @@ fn model(
     tau: &Array<usize, Ix2>,
     connectionmatrix: &Array<f64, Ix2>,
     alpha: &Array<f64, Ix2>,
-) -> (Array<f64, Ix2>, Array<f64, Ix2>) {
+) -> (Array<f64, Ix2>, Array<f64, Ix3>) {
     // replaces "function model(dt, tinitial, tmax, N, epsilon, dimension)" in igor
     // let mut phicurrent: Array<f64, Ix1> = Array::zeros(*n);
 
@@ -289,24 +266,13 @@ fn model(
             );
         }
 
-        // attempt at iteration over all oscillators
-        // let phicurrent = phi.slice(s![.., t]);
-        // for (i, value) in phicurrent.indexed_iter() {
-        //     println!("value {} for index {} at time {}", value, i, t);
-        // }
-
-        // attempt at parallel iteration over all oscillators
-        // Zip::indexed(phicurrent).par_for_each(|i, value| {
-        //     println!("value {} for index {} at time {}", value, i, t);
-        // });
-
         //Evolution of Coupling
         for i in 0..*n {
             for j in 0..*n {
                 let timewithdelay = t - tau[[i, j]] as usize;
                 let factor = phi[[i, t]] - phi[[j, timewithdelay]];
-                kcoupling[[i, j]] = kcoupling[[i, j]]
-                    + (epsilon * (alpha[[i, j]] * factor.cos() - kcoupling[[i, j]]) * dt);
+                kcoupling[[i, j, t + 1]] = kcoupling[[i, j, t]]
+                    + (epsilon * (alpha[[i, j]] * factor.cos() - kcoupling[[i, j, t]]) * dt);
             }
         }
     }
@@ -354,28 +320,21 @@ pub fn run(
 
     clustersize: usize,
     drivingfrequency: f64,
-) -> Array<f64, Ix2> {
-    let mut kcoupling: Array<f64, Ix2> = Array::zeros((n, n));
-    kcoupling.fill(g);
+) -> (Array<f64, Ix2>, Array<f64, Ix3>) {
+    let alpha: Array<f64, _> = Array::ones((n, n)); // coupling speed eviolution
+    let connectionmatrix: Array<f64, _> = Array::ones((n, n)); // whether coupled or not
 
-    // TODO: figure out the use of these "waves" and variables from old code
-    // let mut _tt: Array<f64, _> = Array::zeros(n * tmax);
-    // let mut _freqs: Array<f64, _> = Array::zeros(n * tmax);
-    // let _epsilon_counter = 0;
-
-    // TODO: better documenation on the differences between these
-    let alpha: Array<f64, _> = Array::ones((n, n));
-    let connectionmatrix: Array<f64, _> = Array::ones((n, n));
-
-    // TODO: check implmentation of this normal distribution
     let omega: Array<f64, Ix1> =
-        Array::random(n, rand_distr::Normal::new(1.0, spreadinomega).unwrap());
+        Array::random(n, rand_distr::Normal::new(1.0, spreadinomega).unwrap()); // random frequencies of oscillators
 
     // initial conditions
     let tau: Array<usize, Ix2> = calculate_delays(&timemetric, &n, &dt);
     let tinitial: usize = set_tinitial(&tau);
     println!("tinitial = {}", tinitial);
     let tmax: usize = &tinitial + &timesim;
+
+    let mut kcoupling: Array<f64, Ix3> = Array::zeros((n, n, tmax)); // coupling strength
+    kcoupling.fill(g);
 
     let mut phi: Array<f64, Ix2> = initialize_phi(&n, &clustersize, &tmax);
     // println!("phi shape: {:?}", phi.shape()[0]);
@@ -392,7 +351,7 @@ pub fn run(
     );
 
     // run the actual model
-    (phi, _) = model(
+    (phi, kcoupling) = model(
         phi,
         kcoupling,
         &omega,
@@ -417,10 +376,7 @@ pub fn run(
         &order_parameter2_cluster_connected,
     );
 
-    // finalfrequencies characterization currently unused
-    // let finalfrequencies = final_freqs(&phi, &n, &dt, &tmax);
-
     // TODO: figure out saving the data
     // possibly consider moving model into a struct
-    phi
+    (phi, kcoupling)
 }
