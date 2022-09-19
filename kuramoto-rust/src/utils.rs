@@ -1,6 +1,12 @@
 use std::path::Path;
 use std::path::PathBuf;
 
+struct TimeParams {
+    dt: f64,
+    tmax: usize,
+    timemetric: f64,
+}
+
 pub fn update_name(output_dir: &Path, base_name: &str, identifier: &str) -> PathBuf {
     let mut new_name = base_name.to_owned();
     new_name.push_str(identifier);
