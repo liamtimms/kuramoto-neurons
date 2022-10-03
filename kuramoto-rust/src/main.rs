@@ -153,6 +153,17 @@ fn main() {
     let drivingfrequency: f64 = cli.drivingfrequency; //frequency that the oscillaotrs in the cluster will be forced to move at during initial conditions
 
     // setting up the output file name for later
+    let run_params = utils::RunParams {
+        n,
+        timesim,
+        dt,
+        spreadinomega,
+        g,
+        epsilon,
+        timemetric,
+        clustersize,
+        drivingfrequency,
+    };
 
     let identifier = format!(
         "N{n}-D{dimension}-t{timesim}-T{timemetric}-ostd{spreadinomega}-g{g}-e{epsilon}-C{clustersize}-do{drivingfrequency}.npy"
@@ -166,17 +177,7 @@ fn main() {
 
     if dimension == 1 {
         // calling the 1D simulation
-        let (phi, kcoupling) = onedimensional::run(
-            n,
-            timesim,
-            dt,
-            spreadinomega,
-            g,
-            epsilon,
-            timemetric,
-            clustersize,
-            drivingfrequency,
-        );
+        let (phi, kcoupling) = onedimensional::run(&run_params);
 
         // save data with error handling
         match write_npy(&phi_save_name, &phi) {
@@ -189,20 +190,15 @@ fn main() {
         }
     } else if dimension == 2 {
         // calling the 2D simulation
-        let phi = twodimensional::run(
-            n,
-            timesim,
-            dt,
-            spreadinomega,
-            g,
-            epsilon,
-            timemetric,
-            clustersize,
-            drivingfrequency,
-        );
+        let (phi, kcoupling) = twodimensional::run(&run_params);
+
         match write_npy(&phi_save_name, &phi) {
             Ok(_) => println!("Saved to {}", phi_save_name.display()),
             Err(e) => println!("Error saving to {}: {}", phi_save_name.display(), e),
+        }
+        match write_npy(&k_save_name, &kcoupling) {
+            Ok(_) => println!("Saved to {}", k_save_name.display()),
+            Err(e) => println!("Error saving to {}: {}", k_save_name.display(), e),
         }
     } else {
         // we haven't implemented anything for higher dimensions yet

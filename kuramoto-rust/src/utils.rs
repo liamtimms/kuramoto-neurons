@@ -1,10 +1,16 @@
 use std::path::Path;
 use std::path::PathBuf;
 
-struct TimeParams {
-    dt: f64,
-    tmax: usize,
-    timemetric: f64,
+pub struct RunParams {
+    pub n: usize,
+    pub timesim: usize,
+    pub dt: f64,
+    pub spreadinomega: f64,
+    pub g: f64,
+    pub epsilon: f64,
+    pub timemetric: f64,
+    pub clustersize: usize,
+    pub drivingfrequency: f64,
 }
 
 pub fn update_name(output_dir: &Path, base_name: &str, identifier: &str) -> PathBuf {

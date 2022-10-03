@@ -8,6 +8,16 @@ use ndarray_stats::QuantileExt;
 
 use crate::utils;
 
+/// One dimensional model
+struct OneDimensional {
+    phi: Array<f64, Ix2>,
+    kcoupling: Array<f64, Ix3>,
+    omega: Array<f64, Ix1>,
+    tau: Array<usize, Ix2>,
+    connectionmatrix: Array<f64, Ix2>,
+    alpha: Array<f64, Ix2>,
+}
+
 fn find_delay(i: &usize, j: &usize, n: &usize, z: &f64) -> usize {
     // find the delay between oscillator i and it's neighbor j
     let x = (*i as f64 - *j as f64).abs();
@@ -46,11 +56,16 @@ fn set_tinitial(tau: &Array<usize, Ix2>) -> usize {
     }
 }
 
+fn get_tmax(phi: &Array<f64, Ix2>) -> usize {
+    // set the maximum time step
+    phi.shape()[1]
+}
+
 fn calc_order_params(
     phi: &Array<f64, Ix2>,
     n: &usize,
-    tmax: &usize,
 ) -> (Array<f64, Ix2>, Array<f64, Ix2>, Array<f64, Ix2>) {
+    let tmax = get_tmax(phi);
     // calculate order parameters
     // This is reproduced from the original code
     // and CLEARLY NOT OPTIMIZED
@@ -65,12 +80,12 @@ fn calc_order_params(
 
     let mut phicurrent: Array<f64, Ix1> = Array::zeros(*n);
 
-    let mut order_parameter: Array<f64, Ix2> = Array::zeros((5, *tmax));
-    let mut order_parameter2_cluster: Array<f64, Ix2> = Array::zeros((5, *tmax));
-    let mut order_parameter2_cluster_connected: Array<f64, Ix2> = Array::zeros((5, *tmax));
+    let mut order_parameter: Array<f64, Ix2> = Array::zeros((5, tmax));
+    let mut order_parameter2_cluster: Array<f64, Ix2> = Array::zeros((5, tmax));
+    let mut order_parameter2_cluster_connected: Array<f64, Ix2> = Array::zeros((5, tmax));
 
     for m in 0..5 {
-        for t in 0..*tmax {
+        for t in 0..tmax {
             for i in 0..*n {
                 phicurrent[i] =
                     phi[[i, t]] - (2.0 * std::f64::consts::PI * m as f64) * i as f64 / *n as f64;
@@ -235,7 +250,7 @@ fn model(
     // parameters of the simulation itself
     dt: &f64,
     tinitial: &usize,
-    tmax: &usize,
+    // tmax: &usize,
     n: &usize,
     epsilon: &f64,
     // parameters for connections
@@ -246,10 +261,11 @@ fn model(
     // replaces "function model(dt, tinitial, tmax, N, epsilon, dimension)" in igor
     // let mut phicurrent: Array<f64, Ix1> = Array::zeros(*n);
 
-    let pb = ProgressBar::new(((*tmax - 1) - *tinitial) as u64);
+    let tmax = get_tmax(&phi);
+    let pb = ProgressBar::new(((tmax - 1) - *tinitial) as u64);
 
     // BEGINING OF TIME (1D)
-    for t in *tinitial..(*tmax - 1) {
+    for t in *tinitial..(tmax - 1) {
         pb.inc(1); // update progressbar
 
         // Evolution of the Oscillators
@@ -308,27 +324,28 @@ fn op_compare(
     println!("{}", current_string);
 }
 
-pub fn run(
+fn setup(
     n: usize,
-    timesim: usize,
-    dt: f64,
     spreadinomega: f64,
-
+    timemetric: &f64,
+    dt: &f64,
+    timesim: &usize,
     g: f64,
-    epsilon: f64,
-    timemetric: f64,
-
-    clustersize: usize,
-    drivingfrequency: f64,
-) -> (Array<f64, Ix2>, Array<f64, Ix3>) {
+    clustersize: &usize,
+) -> (
+    OneDimensional, // parameters for oscillators
+    usize,
+) {
+    // contains immutable parameters describing the initial state of the system
     let alpha: Array<f64, _> = Array::ones((n, n)); // coupling speed eviolution
     let connectionmatrix: Array<f64, _> = Array::ones((n, n)); // whether coupled or not
 
     let omega: Array<f64, Ix1> =
         Array::random(n, rand_distr::Normal::new(1.0, spreadinomega).unwrap()); // random frequencies of oscillators
 
-    // initial conditions
     let tau: Array<usize, Ix2> = calculate_delays(&timemetric, &n, &dt);
+
+    // initial conditions
     let tinitial: usize = set_tinitial(&tau);
     println!("tinitial = {}", tinitial);
     let tmax: usize = tinitial + timesim;
@@ -336,47 +353,68 @@ pub fn run(
     let mut kcoupling: Array<f64, Ix3> = Array::zeros((n, n, tmax)); // coupling strength
     kcoupling.fill(g);
 
-    let mut phi: Array<f64, Ix2> = initialize_phi(&n, &clustersize, &tmax);
-    // println!("phi shape: {:?}", phi.shape()[0]);
+    let phi: Array<f64, Ix2> = initialize_phi(&n, &clustersize, &tmax);
+
+    let one_dimensional_circle = OneDimensional {
+        phi,
+        kcoupling,
+        omega,
+        tau,
+        connectionmatrix,
+        alpha,
+    };
+
+    (one_dimensional_circle, tinitial)
+}
+
+pub fn run(run_params: &utils::RunParams) -> (Array<f64, Ix2>, Array<f64, Ix3>) {
+    let (mut one_dimensional_circle, tinitial) = setup(
+        run_params.n,
+        run_params.spreadinomega,
+        &run_params.timemetric,
+        &run_params.dt,
+        &run_params.timesim,
+        run_params.g,
+        &run_params.clustersize,
+    );
 
     // driving the cluster for the initial time
-    phi = driver(
-        phi,
-        &dt,
-        &drivingfrequency,
-        &n,
-        &clustersize,
+    one_dimensional_circle.phi = driver(
+        one_dimensional_circle.phi,
+        &run_params.dt,
+        &run_params.drivingfrequency,
+        &run_params.n,
+        &run_params.clustersize,
         &tinitial,
-        &omega,
+        &one_dimensional_circle.omega,
     );
 
     // run the actual model
-    (phi, kcoupling) = model(
-        phi,
-        kcoupling,
-        &omega,
-        &dt,
+    (one_dimensional_circle.phi, one_dimensional_circle.kcoupling) = model(
+        one_dimensional_circle.phi,
+        one_dimensional_circle.kcoupling,
+        &one_dimensional_circle.omega,
+        &run_params.dt,
         &tinitial,
-        &tmax,
-        &n,
-        &epsilon,
-        &tau,
-        &connectionmatrix,
-        &alpha,
+        // &tmax,
+        &run_params.n,
+        &run_params.epsilon,
+        &one_dimensional_circle.tau,
+        &one_dimensional_circle.connectionmatrix,
+        &one_dimensional_circle.alpha,
     );
 
     // calculating the order parameter
-    let (order_parameter, order_parameter2_cluster, order_parameter2_cluster_connected) =
-        calc_order_params(&phi, &n, &tmax);
+    let (_, _, _) = calc_order_params(&one_dimensional_circle.phi, &run_params.n);
 
-    op_compare(
-        &tmax,
-        &order_parameter,
-        &order_parameter2_cluster,
-        &order_parameter2_cluster_connected,
-    );
+    // op_compare(
+    //     &tmax,
+    //     &order_parameter,
+    //     &order_parameter2_cluster,
+    //     &order_parameter2_cluster_connected,
+    // );
 
     // TODO: figure out saving the data
     // possibly consider moving model into a struct
-    (phi, kcoupling)
+    (one_dimensional_circle.phi, one_dimensional_circle.kcoupling)
 }

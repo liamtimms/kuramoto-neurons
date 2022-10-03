@@ -9,6 +9,21 @@ use ndarray_stats::QuantileExt;
 
 use crate::utils;
 
+/// Two dimensional model
+struct TwoDimensional {
+    phi: Array<f64, Ix3>,
+    kcoupling: Array<f64, Ix5>,
+    omega: Array<f64, Ix2>,
+    tau: Array<usize, Ix4>,
+    connectionmatrix: Array<f64, Ix4>,
+    alpha: Array<f64, Ix4>,
+}
+
+fn get_tmax(phi: &Array<f64, Ix3>) -> usize {
+    // set the maximum time step
+    phi.shape()[2]
+}
+
 fn find_delay(i: &usize, j: &usize, k: &usize, l: &usize, n: &usize, z: &f64) -> usize {
     // find the delay between oscillator at i, j and it's neighbor at k, l
     // tau[i][j][k][l]=  trunc(Z/N*sqrt( (min(abs(i-k), N-abs(i-k)))^2 +(min(abs(j-l), N-abs(j-l)))^2 ))
@@ -110,7 +125,7 @@ fn update_oscillator(
     phi: &Array<f64, Ix3>,
     tau: &Array<usize, Ix4>,
     omega: &Array<f64, Ix2>,
-    kcoupling: &Array<f64, Ix4>,
+    kcoupling: &Array<f64, Ix5>,
     connectionmatrix: &Array<f64, Ix4>,
     dt: &f64,
 ) -> f64 {
@@ -121,7 +136,8 @@ fn update_oscillator(
         for l in 0..n {
             let timewithdelay = t - tau[[*i, *j, k, l]] as usize;
             let diff = phi[[k, l, timewithdelay]] - phi_current;
-            summation += kcoupling[[*i, *j, k, l]] * diff.sin() * connectionmatrix[[*i, *j, k, l]];
+            summation +=
+                kcoupling[[*i, *j, k, l, *t]] * diff.sin() * connectionmatrix[[*i, *j, k, l]];
         }
     }
     // returning a "phi_new"
@@ -135,7 +151,7 @@ fn update_oscillator_parallel(
     phi: &Array<f64, Ix3>,
     tau: &Array<usize, Ix4>,
     omega: &Array<f64, Ix2>,
-    kcoupling: &Array<f64, Ix4>,
+    kcoupling: &Array<f64, Ix5>,
     connectionmatrix: &Array<f64, Ix4>,
     dt: &f64,
 ) -> f64 {
@@ -151,7 +167,7 @@ fn update_oscillator_parallel(
                 let timewithdelay = t - tau[[*i, *j, k, l]] as usize;
                 let diff = phi[[k, l, timewithdelay]] - phi_current;
                 inner_sum +=
-                    kcoupling[[*i, *j, k, l]] * diff.sin() * connectionmatrix[[*i, *j, k, l]];
+                    kcoupling[[*i, *j, k, l, *t]] * diff.sin() * connectionmatrix[[*i, *j, k, l]];
             }
             inner_sum
         })
@@ -164,27 +180,27 @@ fn update_oscillator_parallel(
 fn model(
     // parameters for oscillators
     mut phi: Array<f64, Ix3>,
-    mut kcoupling: Array<f64, Ix4>,
+    mut kcoupling: Array<f64, Ix5>,
     omega: &Array<f64, Ix2>,
     // parameters of the simulation itself
     dt: &f64,
     tinitial: &usize,
-    tmax: &usize,
     n: &usize,
     epsilon: &f64,
     // parameters for connections
     tau: &Array<usize, Ix4>,
     connectionmatrix: &Array<f64, Ix4>,
     alpha: &Array<f64, Ix4>,
-) -> (Array<f64, Ix3>, Array<f64, Ix4>) {
+) -> (Array<f64, Ix3>, Array<f64, Ix5>) {
     // replaces "function model(dt, tinitial, tmax, N, epsilon, dimension)" in igor
     // let mut phicurrent: Array<f64, Ix2> = Array::zeros((*n, *n));
 
-    let pb = ProgressBar::new(((*tmax - 1) - *tinitial) as u64);
+    let tmax = get_tmax(&phi);
+    let pb = ProgressBar::new(((tmax - 1) - *tinitial) as u64);
 
     // BEGINING OF TIME (2D)
     println!("starting model");
-    for t in *tinitial..(*tmax - 1) {
+    for t in *tinitial..(tmax - 1) {
         pb.inc(1); // update progressbar
 
         // Evolution of the Oscillators
@@ -229,9 +245,10 @@ fn model(
                     for l in 0..*n {
                         let timewithdelay = t - tau[[i, j, k, l]] as usize;
                         let factor = phi[[i, j, t]] - phi[[k, l, timewithdelay]];
-                        kcoupling[[i, j, k, l]] = kcoupling[[i, j, k, l]]
+                        kcoupling[[i, j, k, l, t + 1]] = kcoupling[[i, j, k, l, t]]
                             + (epsilon
-                                * (alpha[[i, j, k, l]] * factor.cos() - kcoupling[[i, j, k, l]])
+                                * (alpha[[i, j, k, l]] * factor.cos()
+                                    - kcoupling[[i, j, k, l, t]])
                                 * dt);
                     }
                 }
@@ -243,59 +260,85 @@ fn model(
     (phi, kcoupling)
 }
 
-pub fn run(
+fn setup(
     n: usize,
-    timesim: usize,
-    dt: f64,
     spreadinomega: f64,
-
+    timemetric: &f64,
+    dt: &f64,
+    timesim: &usize,
     g: f64,
-    epsilon: f64,
-    timemetric: f64,
-
-    clustersize: usize,
-    drivingfrequency: f64,
-) -> Array<f64, Ix3> {
-    let mut kcoupling: Array<f64, Ix4> = Array::zeros((n, n, n, n));
-    kcoupling.fill(g);
-
-    let alpha: Array<f64, _> = Array::ones((n, n, n, n));
-    let connectionmatrix: Array<f64, _> = Array::ones((n, n, n, n));
-    println!("calculating delays...");
+    clustersize: &usize,
+) -> (
+    TwoDimensional, // parameters for oscillators
+    usize,
+) {
+    // contains immutable parameters describing the initial state of the system
+    let alpha: Array<f64, _> = Array::ones((n, n, n, n)); // coupling speed eviolution
+    let connectionmatrix: Array<f64, _> = Array::ones((n, n, n, n)); // whether coupled or not
 
     let omega: Array<f64, Ix2> =
         // Array::random(n, rand_distr::Normal::new(1.0, spreadinomega).unwrap());
     Array::random((n, n), rand_distr::Normal::new(1.0, spreadinomega).unwrap());
 
     let tau: Array<usize, Ix4> = calculate_delays(&timemetric, &n, &dt);
+
+    // initial conditions
     let tinitial: usize = set_tinitial(&tau);
+    println!("tinitial = {}", tinitial);
     let tmax: usize = tinitial + timesim;
 
-    let mut phi: Array<f64, Ix3> = initialize_phi(&n, &clustersize, &tmax);
+    let phi: Array<f64, Ix3> = initialize_phi(&n, &clustersize, &tmax);
 
-    phi = driver(
-        phi,
-        &dt,
-        &drivingfrequency,
-        &n,
-        &clustersize,
-        &tinitial,
-        &omega,
-    );
+    let mut kcoupling: Array<f64, Ix5> = Array::zeros((n, n, n, n, tmax)); // coupling strength
+    kcoupling.fill(g);
 
-    (phi, _) = model(
+    let two_dimensional_plane = TwoDimensional {
         phi,
         kcoupling,
-        &omega,
-        &dt,
-        &tinitial,
-        &tmax,
-        &n,
-        &epsilon,
-        &tau,
-        &connectionmatrix,
-        &alpha,
+        omega,
+        tau,
+        connectionmatrix,
+        alpha,
+    };
+
+    (two_dimensional_plane, tinitial)
+}
+
+pub fn run(run_params: &utils::RunParams) -> (Array<f64, Ix3>, Array<f64, Ix5>) {
+    let (mut two_dimensional_plane, tinitial) = setup(
+        run_params.n,
+        run_params.spreadinomega,
+        &run_params.timemetric,
+        &run_params.dt,
+        &run_params.timesim,
+        run_params.g,
+        &run_params.clustersize,
     );
 
-    phi
+    // driving the cluster for the initial time
+    two_dimensional_plane.phi = driver(
+        two_dimensional_plane.phi,
+        &run_params.dt,
+        &run_params.drivingfrequency,
+        &run_params.n,
+        &run_params.clustersize,
+        &tinitial,
+        &two_dimensional_plane.omega,
+    );
+
+    // run the actual model
+    (two_dimensional_plane.phi, two_dimensional_plane.kcoupling) = model(
+        two_dimensional_plane.phi,
+        two_dimensional_plane.kcoupling,
+        &two_dimensional_plane.omega,
+        &run_params.dt,
+        &tinitial,
+        &run_params.n,
+        &run_params.epsilon,
+        &two_dimensional_plane.tau,
+        &two_dimensional_plane.connectionmatrix,
+        &two_dimensional_plane.alpha,
+    );
+
+    (two_dimensional_plane.phi, two_dimensional_plane.kcoupling)
 }
