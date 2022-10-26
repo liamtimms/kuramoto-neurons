@@ -60,50 +60,50 @@ mod utils;
 
 /// CLI arguments for the program
 #[derive(Parser, Debug)]
-#[clap(author, version, about, long_about = None)]
+#[command(author, version, about, long_about = None)]
 struct Args {
     /// The directory to save the results to
-    #[clap(short, long, value_parser, default_value_t = String::from("."))]
+    #[arg(short, long, value_parser, default_value_t = String::from("."))]
     output_dir: String,
 
     /// Number of dimensions of the system
-    #[clap(short, long, value_parser, default_value_t = 1)]
+    #[arg(short, long, value_parser, default_value_t = 1)]
     dimension: i32,
 
     /// Number of oscillators
-    #[clap(short, long, value_parser, default_value_t = 20)]
+    #[arg(short, long, value_parser, default_value_t = 20)]
     number: usize,
 
     /// Number of steps to run the simulation
-    #[clap(short, long, value_parser, default_value_t = 2000)]
+    #[arg(short, long, value_parser, default_value_t = 2000)]
     timesim: usize,
 
     /// Size of time step using runge-kutta
-    #[clap(long, value_parser, default_value_t = 0.01)]
+    #[arg(long, value_parser, default_value_t = 0.01)]
     dt: f64,
 
     /// Time metric. Zannette's "T"
-    #[clap(long, value_parser, default_value_t = 2.0)]
+    #[arg(long, value_parser, default_value_t = 2.0)]
     timemetric: f64,
 
     /// Standard deviation in natural frequency distribution
-    #[clap(short, long, value_parser, default_value_t = 0.25)]
+    #[arg(short, long, value_parser, default_value_t = 0.25)]
     spreadinomega: f64,
 
     /// Initial Coupling strength
-    #[clap(short, long, value_parser, default_value_t = 1.0)]
+    #[arg(short, long, value_parser, default_value_t = 1.0)]
     g: f64,
 
     /// Speed of coupling evolution
-    #[clap(short, long, value_parser, default_value_t = 0.1)]
+    #[arg(short, long, value_parser, default_value_t = 0.1)]
     epsilon: f64,
 
     /// driving frequency
-    #[clap(long, value_parser, default_value_t = 1.0)]
+    #[arg(long, value_parser, default_value_t = 1.0)]
     drivingfrequency: f64,
 
     /// Size of cluster
-    #[clap(short, long, value_parser, default_value_t = 0)]
+    #[arg(short, long, value_parser, default_value_t = 0)]
     clustersize: usize,
 }
 
