@@ -19,6 +19,12 @@ struct TwoDimensional {
     alpha: Array<f64, Ix4>,
 }
 
+impl TwoDimensional {
+    fn tmax(&self) -> usize {
+        self.phi.shape()[2]
+    }
+}
+
 fn get_tmax(phi: &Array<f64, Ix3>) -> usize {
     // set the maximum time step
     phi.shape()[2]
@@ -83,7 +89,7 @@ fn set_tinitial(tau: &Array<usize, Ix4>) -> usize {
     match tau.argmax() {
         Ok(max_tau) => {
             let max_tau = tau[max_tau];
-            max_tau as usize * 3 // fill out thrice the delay
+            max_tau as usize * 3 // fill out thrice the max delay
         }
         Err(_) => {
             println!("Error: no maximum tau found");
@@ -109,7 +115,7 @@ fn driver(
                     // phi[[i, timewithstep]] = phi[[i, t]] + drivingfrequency * dt;
                     phi[[i, j, timewithstep]] = phi[[i, j, t]] + drivingfrequency * dt;
                 } else if i >= *clustersize {
-                    //0<t<tinitial phase assignments
+                    // 0<t<tinitial phase assignments
                     phi[[i, j, timewithstep]] = phi[[i, j, t]] + omega[[i, j]] * dt;
                 }
             }
