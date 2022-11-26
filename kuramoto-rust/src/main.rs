@@ -91,7 +91,7 @@ struct Args {
     spreadinomega: f64,
 
     /// Initial Coupling strength
-    #[arg(short, long, value_parser, default_value_t = 1.0)]
+    #[arg(long, value_parser, default_value_t = 1.0)]
     g: f64,
 
     /// Speed of coupling evolution
