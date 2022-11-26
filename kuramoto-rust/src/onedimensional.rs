@@ -18,6 +18,29 @@ struct OneDimensional {
     alpha: Array<f64, Ix2>,
 }
 
+fn kcoupling_evolve(
+    kcoupling: &Array<f64, Ix2>,
+    phi: &Array<f64, Ix2>,
+    tau: &Array<usize, Ix2>,
+    t: usize,
+    epsilon: f64,
+    alpha: &Array<f64, Ix2>,
+    dt: f64,
+) -> Array<f64, Ix2> {
+    // TODO: implement async
+    let n = get_n(phi);
+    let mut kcoupling = kcoupling.clone();
+    for i in 0..n {
+        for j in 0..n {
+            let timewithdelay = t - tau[[i, j]] as usize;
+            let factor = phi[[i, t]] - phi[[j, timewithdelay]];
+            kcoupling[[i, j]] = kcoupling[[i, j]]
+                + (epsilon * (alpha[[i, j]] * factor.cos() - kcoupling[[i, j]]) * dt);
+        }
+    }
+    kcoupling
+}
+
 fn find_delay(i: &usize, j: &usize, n: &usize, z: &f64) -> usize {
     // find the delay between oscillator i and it's neighbor j
     let x = (*i as f64 - *j as f64).abs();
@@ -54,6 +77,11 @@ fn set_tinitial(tau: &Array<usize, Ix2>) -> usize {
             0 // in principle this should never happen
         }
     }
+}
+
+fn get_n(phi: &Array<f64, Ix2>) -> usize {
+    // get the number of oscillators
+    phi.shape()[0]
 }
 
 fn get_tmax(phi: &Array<f64, Ix2>) -> usize {
@@ -214,33 +242,6 @@ fn update_oscillator(
 
     phi_current + (omega[*i] + (summation / n as f64)) * dt
 }
-
-// fn update_oscillator_parallel(
-//     t: &usize,
-//     i: &usize,
-//     phi: &Array<f64, Ix2>,
-//     tau: &Array<usize, Ix2>,
-//     omega: &Array<f64, Ix1>,
-//     kcoupling: &Array<f64, Ix2>,
-//     connectionmatrix: &Array<f64, Ix2>,
-//     dt: &f64,
-// ) -> f64 {
-//     // SLOWER than update_oscillator in all tests
-//     let phi_current = phi[[*i, *t]];
-//     let n = phi.shape()[0];
-//     // based on https://www.anycodings.com/1questions/5406370/how-to-use-rayon-for-parallel-calculation-of-pi
-//     let summation: f64 = (0..n)
-//         .into_par_iter()
-//         .map(|j| {
-//             let timewithdelay = t - tau[[*i, j]] as usize;
-//             let factor = phi[[j, timewithdelay]] - phi_current;
-//             ((kcoupling[[*i, j]] * factor.sin() * connectionmatrix[[*i, j]]) as f64) as f64
-//         })
-//         .reduce(|| 0.0, |a, b| a + b);
-//
-//     let phi_new = phi_current + (omega[*i] + (summation / n as f64)) * dt; /* error here */
-//     phi_new
-// }
 
 fn model(
     // parameters for oscillators
